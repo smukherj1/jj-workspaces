@@ -52,7 +52,3 @@ CI checkouts are ephemeral and unrecorded. CI checks out by full commit ID only:
 
 - **Snapshotting build outputs** for incremental builds. The daemon already tracks every write in the mount, so only the CLI would change.
 - **View chunking.** If the user count grows well past 50, store the View as content-addressed chunks in `OpStore`, so each operation uploads only the chunks that changed.
-
-## Open questions
-
-- **Workspace creation command.** The command name and flags for creating a workspace through `Workspace.Create`, including the first workspace on a machine, where no repo exists locally yet.

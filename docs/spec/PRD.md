@@ -85,20 +85,14 @@ Developers and build systems working in a large source repository have to clone 
 - Build times on a cold cache no worse than 20% slower than on a full local checkout, and equal on a warm cache.
 - Developer adoption and satisfaction (survey), measured against the current full-clone workflow.
 
-## 8. Milestones
-
-1. **M0, Prototype:** custom `Backend` that talks to the daemon. The daemon has an on-disk cache backed by a simple remote (for example an object store bucket). Files are still materialized eagerly.
-2. **M1, VFS:** FUSE-based lazy working copy, custom `WorkingCopy` with dirty-path tracking, and instant checkout.
-3. **M2, Production readiness:** prefetch, metrics, cache eviction, crash recovery, and CI integration.
-
-## 9. Risks
+## 8. Risks
 
 - **Tool behavior:** tools that walk the whole tree (grep, IDE indexers, `find`) will trigger mass fetches. Mitigations: sparse/scoped views, fetch throttling, and server-side search.
 - **FUSE performance and complexity:** kernel round-trips and page-cache behavior. Mitigations: kernel caching options, passthrough for materialized files (FUSE passthrough needs Linux 6.9+), and benchmarks done early.
 - **jj API stability:** the `Backend` and `WorkingCopy` traits change between jj releases, so we need to pin a version and track upstream.
 - **Consistency:** races between VFS edits, snapshots, and checkouts. Defining the locking semantics is essential.
 
-## 10. Future Work
+## 9. Future Work
 
 - Server-side diff and history queries for large commit ranges.
 - Windows and macOS support, using platform alternatives to FUSE (for example ProjFS on Windows and FSKit on macOS).

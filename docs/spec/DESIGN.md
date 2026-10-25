@@ -64,7 +64,3 @@ jj semantics (conflict materialization, ignore rules, change IDs, merging concur
   - Reads: the daemon keeps a `WatchOpHeads` stream open, prefetches new ops and Views, and serves `GetOpHeads` locally as the service heads plus unpublished local heads.
   - Costs: unpublished operations become data that exists only on the daemon, other machines see changes only after publish, and the CLI should warn about operations that stay unpublished.
 - **Snapshot filtering hooks**, if ignored files make snapshots slow. Two generic hooks that know nothing about ignore rules: `ListDirty(ws, skip_prefixes[])`, and reporting a directory missing from the base tree as one entry (expanded on request). The CLI would compute the skip list from ignored directories with jj-lib, store it in its working-copy state, and drop entries when a `.gitignore` changes.
-
-## Open questions
-
-- **Operation and view encoding.** How the CLI serializes operations and views (e.g. stock jj's protobuf op-store format), how their IDs fit the Git-compatible scheme, and therefore how the daemon hashes them and the service verifies them on upload.

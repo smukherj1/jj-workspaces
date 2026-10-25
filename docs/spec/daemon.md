@@ -74,7 +74,3 @@ The daemon keeps two stores, shared by all workspaces on the machine:
   - Upgrades: the old daemon finishes in-flight requests and passes the `/dev/fuse` fd and its in-memory tables (open file handles, lookup counts) to the new daemon over a Unix socket. This works on any kernel.
   - Crashes: keep the fd in systemd's fd store, persist the file-handle tables, and replay in-flight requests with `FUSE_NOTIFY_RESEND` (Linux 6.9+).
 - **Periodic auto-snapshots**, if edits should reach the service without the user running a jj command. The daemon would run the CLI's snapshot when a workspace is dirty, like jj's watchman `register-snapshot-trigger`. Cost: many more operations in the shared op log (each uploading the whole View) and more frequent op-head merges.
-
-## Open questions
-
-- **Kernel versions on target machines.** FUSE passthrough for materialized files needs Linux 6.9+; confirm the target machines run it.

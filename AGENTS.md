@@ -11,3 +11,5 @@ See dir `docs` for documentation:
   implementing changes in a plan. Update the plan (marking sections or it as done) after implementing
   part of the plan. Only read the plan document you're asked to execute on. Also read any other
   documents the plan document you're implementing references.
+  - [MVP roadmap](docs/plan/mvp-impl-roadmap.md) is the source of truth for milestones and open
+    questions. List each open question under the milestone it blocks, not in the spec.
