@@ -19,6 +19,9 @@ milestones and for open questions that must be answered before a milestone is do
   sub-milestone 1, workflow service can serve raw GRPC requests to create workspaces. Detailed APIs,
   technology decisions will be decided when designing each sub-milestone.
 
+- The protos declare every service from M1 on. Each RPC is added in the milestone that first needs
+  it.
+
 - Each milestone ends with an end-to-end test that runs the CLI against a real daemon and service.
 
 - There is no eagerly materialized working copy. The FUSE working copy comes in M3 and M4, and the
@@ -32,13 +35,15 @@ milestones and for open questions that must be answered before a milestone is do
 
 The three binaries build, start and call each other, with no repository functionality yet.
 
-1. **Service:** the workspace service starts and serves its gRPC API. Every RPC returns
-   "unimplemented".
-2. **Daemon:** the daemon serves its gRPC API on a Unix socket with stub RPCs, and calls the service
-   with bounded timeouts.
-3. **CLI:** the custom jj binary (pinned jj version) registers its store and working copy factories.
-   jj commands reach the daemon and fail with a clear "not implemented" error.
+1. **Service:** `jjw-workspace-service` serves gRPC health and an empty `WorkspaceService`.
+2. **Daemon:** `jjw-daemon` serves `Daemon.GetStatus` and the empty `Store`, `OpStore`, `OpHeads`,
+   `WorkingCopy`, `Workspace` and `Prefetch` services on a Unix socket. `GetStatus` checks the
+   service's health with a bounded timeout.
+3. **CLI:** `jjw`, the custom jj binary at a pinned jj version. `jjw cws status` reports whether the
+   daemon and the service are up. Commands that create a repo fail with a clear error.
 4. **Test harness:** one command starts a service and a daemon and runs the CLI against them.
+
+See [m1-implementation.md](m1-implementation.md) for detailed implementation plan.
 
 ### M2: Shared repository without a working copy
 
@@ -51,7 +56,9 @@ jj commands that read and rewrite history work through the stack, with no files 
    uploaded in the background. Reads come from local storage, with a fetch on a miss. The commit
    graph is fetched in bulk. An operation is published only once every object it references is on
    the service.
-3. **CLI:** backend, op store and op heads shims using the pinned jj version's commit encoding. The
+3. **CLI:** `jjw` registers its `cws` store factories: backend, op store and op heads shims using
+   the pinned jj version's commit encoding. Stock repo creation (`git init`, `git clone`,
+   `debug init-simple`) stays blocked. The
    commit index is built from the bulk-fetched commit graph. The default `jj log` revset is in
    place. A command creates a repo on the service. A development-only command sets up a local repo
    directory for an existing repo in an ordinary directory, with no working copy; M3's workspace
@@ -78,7 +85,8 @@ fetched only when read. The mount is read-only.
    use. It mounts each workspace with FUSE, serves `stat` and `readdir` without blob downloads, and
    fetches file contents on first read, then serves them from the cache. Checking out a tree costs
    O(diff between trees). Inodes are stable, and mtimes change only for paths whose content changed.
-3. **CLI:** a workspace creation command, plus working copy checkout and state, including conflict
+3. **CLI:** a workspace creation command, plus a registered working copy factory with checkout and
+   state, including conflict
    materialization and stale working copy detection. On a fresh machine, a user creates a workspace
    and moves between revisions with `jj new` and `jj edit`. A first benchmark measures checkout time
    and cached read latency (R1, R4).

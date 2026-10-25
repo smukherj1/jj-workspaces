@@ -1,6 +1,8 @@
-# PRD: Virtualized Workspaces for jj
+# PRD: JJ Cloud Workspaces
 
 **Status:** Draft · **Date:** 2026-10-21
+
+A *cloud workspace* is a jj workspace whose working copy the daemon serves on demand instead of writing it to disk, and a *cloud repo* is the jj repo it belongs to, hosted on the remote service. See the [glossary](../../GLOSSARY.md).
 
 ## 1. Problem
 
@@ -8,7 +10,7 @@ Developers and build systems working in a large source repository have to clone 
 
 ## 2. Goals
 
-1. **Instant checkout:** creating a workspace or switching revisions finishes in seconds, regardless of repository size.
+1. **Instant checkout:** creating a cloud workspace or switching revisions finishes in seconds, regardless of repository size.
 2. **Lazy loading:** file contents are fetched only when a developer, tool, or build reads them, and then cached locally.
 3. **Native jj experience:** standard jj commands (`log`, `new`, `edit`, `diff`, `status`, `rebase`, `describe`, etc.) work without special workflows.
 4. **Build-friendly:** builds see a normal filesystem, and reads that hit the cache are close to local-disk speed.
@@ -16,7 +18,7 @@ Developers and build systems working in a large source repository have to clone 
 ## 3. Non-Goals (v1)
 
 - Full offline support. Uncached content needs the remote service to be reachable.
-- Interoperating with Git remotes (`jj git push/fetch`) for the virtualized repository.
+- Interoperating with Git remotes (`jj git push/fetch`) for a cloud repo.
 - Windows and macOS support. Linux (FUSE) comes first; see Future Work.
 - Replacing existing code review systems.
 
@@ -24,7 +26,7 @@ Developers and build systems working in a large source repository have to clone 
 
 - **Developers** who need fast access to a large codebase and edit a small part of it.
 - **CI and build systems** that need many short-lived checkouts at specific revisions.
-- **Tooling and IDE integrations** that read the workspace as a normal directory tree.
+- **Tooling and IDE integrations** that read a cloud workspace as a normal directory tree.
 
 ## 5. Architecture Overview
 
@@ -42,7 +44,7 @@ Developers and build systems working in a large source repository have to clone 
 
 - Implements jj-lib's `Backend` trait (commits, trees, files, symlinks, copy tracking) by calling the local daemon over IPC (for example gRPC over a Unix socket).
 - Implements a custom `WorkingCopy` / `LockedWorkingCopy` that does **not** write files to disk. A checkout tells the daemon to point the VFS at a root tree ID, and a snapshot asks the daemon for the set of modified paths instead of scanning the tree.
-- Registered through jj's store factories. Creating a workspace goes through the local daemon, which sets up the machine's repo directory on first use and mounts the workspace; no local clone is made.
+- Registered through jj's store factories. Creating a cloud workspace goes through the local daemon, which sets up the machine's repo directory on first use and mounts the workspace; no local clone is made.
 
 ### 5.2 Local daemon
 
@@ -80,7 +82,7 @@ Developers and build systems working in a large source repository have to clone 
 
 ## 7. Success Metrics
 
-- p50 workspace creation < 2 s and p95 < 5 s on the target codebase.
+- p50 cloud workspace creation < 2 s and p95 < 5 s on the target codebase.
 - More than 90% reduction in bytes downloaded per checkout compared with full clones.
 - Build times on a cold cache no worse than 20% slower than on a full local checkout, and equal on a warm cache.
 - Developer adoption and satisfaction (survey), measured against the current full-clone workflow.

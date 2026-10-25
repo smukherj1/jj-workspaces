@@ -1,6 +1,6 @@
 # daemon
 
-Go binary running on each developer and build machine. It serves the jj CLI over gRPC on a Unix socket, owns one FUSE mount per workspace, and talks to the workspace service. See [DESIGN.md](DESIGN.md) for the overall design and [workspace-service.md](workspace-service.md#api) for the API it calls.
+Go binary running on each developer and build machine. It serves the jj CLI over gRPC on a Unix socket, owns one FUSE mount per cloud workspace, and talks to the workspace service. See [DESIGN.md](DESIGN.md) for the overall design and [workspace-service.md](workspace-service.md#api) for the API it calls.
 
 ## API
 
@@ -40,11 +40,11 @@ State per workspace: the checked-out op ID, the materialized `tree_id` the mount
 
 ### Workspace
 
-- **`Create(repo, ws, mount_path)`**: on first use of a repo on the machine, sets up its repo directory (e.g. `~/.cache/jj-workspaces/<repo>/`) holding `.jj/repo`, the commit index and repo config, shared by all workspaces of that repo. It then mounts the workspace and synthesizes its `.jj` in the mount to point to the repo directory, the way a secondary jj workspace points to its repo. No local clone is made. Per-workspace working-copy state is held by the daemon, not in `.jj`.
+- **`Create(repo, ws, mount_path)`**: on first use of a cloud repo on the machine, sets up its repo directory (e.g. `~/.cache/jj-cloud-workspaces/<repo>/`) holding `.jj/repo`, the commit index and repo config, shared by all cloud workspaces of that repo. It then mounts the cloud workspace and synthesizes its `.jj` in the mount to point to the repo directory, the way a secondary jj workspace points to its repo. No local clone is made. Per-workspace working-copy state is held by the daemon, not in `.jj`.
 
 ## Local storage
 
-The daemon keeps two stores, shared by all workspaces on the machine:
+The daemon keeps two stores, shared by all cloud workspaces on the machine:
 
 - **Primary store** (pinned, never evicted): workspace overlays, working-copy state, file metadata records, and objects not yet confirmed on the service. Everything in it is persisted and fsync'd.
 - **Cache:** an LRU content-addressed store holding only objects confirmed on the service, deduplicated across workspaces (R7).
@@ -64,7 +64,7 @@ The daemon keeps two stores, shared by all workspaces on the machine:
 ## Restarts and upgrades
 
 - When the daemon exits, its FUSE mounts go with it. Open files, shells whose current directory is inside a mount, and running builds fail, but no edits are lost (R6).
-- systemd restarts the daemon, which remounts every workspace from the primary store.
+- systemd restarts the daemon, which remounts every cloud workspace from the primary store.
 - Upgrades are scheduled to keep this to about one failure a day at most: build machines are drained and upgraded one at a time, and developer machines upgrade overnight.
 
 ## Future work

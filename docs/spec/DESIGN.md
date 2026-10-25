@@ -1,11 +1,13 @@
-# JJ Workspaces Design
+# JJ Cloud Workspaces Design
 
 See [PRD.md](PRD.md) for the product requirements. This document covers the decisions that span components and the contracts between them. Each component's API, behavior and internals are in its own document.
+
+A *cloud workspace* is a jj workspace whose working copy the daemon serves on demand instead of writing it to disk, and a *cloud repo* is a jj repo whose objects, operation log and op heads live on the workspace service. See the [glossary](../../GLOSSARY.md).
 
 ## Components
 
 - [jj-cli.md](jj-cli.md): Custom jj binary using jj-lib to use the daemon as the storage and working copy backend.
-- [daemon.md](daemon.md): Daemon running on developer or build machine interfacing between the jj cli and the workspaces service and providing a local cache. Serves the API the CLI calls.
+- [daemon.md](daemon.md): Daemon running on developer or build machine interfacing between the jj cli and the workspace service and providing a local cache. Serves the API the CLI calls.
 - [workspace-service.md](workspace-service.md): Remote workspace service for source storage and serving. Serves the API the daemon calls.
 
 ## Overview
@@ -29,7 +31,7 @@ jj semantics (conflict materialization, ignore rules, change IDs, merging concur
 
 ## Repository model
 
-- **One shared op log and View per repo**, for all users. Expected scale is under 50 active users, so the View is stored whole.
+- **One shared op log and View per cloud repo**, for all users. Expected scale is under 50 active users, so the View is stored whole.
 - **Trunk** lives in the workspace service as an ordinary bookmark in the shared View. There is no Git host behind it, and in v1 anyone can move it.
 - **`jj undo` / `jj op restore`** keep stock jj semantics, even though they can revert or clobber other users' operations.
 - **History** is expected to stay under 100k commits, so every machine builds the full commit index locally from commits streamed in bulk from the service. There is no shallow history and no server-side index.
@@ -49,7 +51,7 @@ jj semantics (conflict materialization, ignore rules, change IDs, merging concur
 - **Publishing:** jj has no separate "push". Every jj command that changes the repo ends by writing an operation and calling `UpdateOpHeads`, and that call makes the change visible and durable. It is synchronous: it returns only once the operation, every object it references and the new op heads are on the service. If any step fails, the command fails. Op heads never point to data the service doesn't have.
 - **Reading op heads:** every command reads op heads from the service, so reads are never stale.
 - **Crash safety:** if anything dies before a publish finishes, the command fails and nothing published is lost. Objects written but never published aren't referenced by anything. Working-copy edits are still in the daemon's persisted overlay, so rerunning the command recreates them (R6).
-- **Concurrency:** jj doesn't lock the repo across processes. Two commands that run at the same time (in two workspaces, or on two machines) both start from the same op head and each publishes its own operation. Because `UpdateOpHeads(old, new)` removes `old` and adds `new`, the second writer doesn't fail; the repo just ends up with two op heads, and the next jj command merges them with stock jj-lib logic (R5). If both operations rewrote the same change, the user sees a divergent change and resolves it the normal way.
+- **Concurrency:** jj doesn't lock the repo across processes. Two commands that run at the same time (in two cloud workspaces, or on two machines) both start from the same op head and each publishes its own operation. Because `UpdateOpHeads(old, new)` removes `old` and adds `new`, the second writer doesn't fail; the repo just ends up with two op heads, and the next jj command merges them with stock jj-lib logic (R5). If both operations rewrote the same change, the user sees a divergent change and resolves it the normal way.
 
 ## Known limitations (v1)
 

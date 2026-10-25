@@ -19,12 +19,12 @@ The binary is stock jj with custom store and working copy implementations regist
 
 ## Commit index
 
-- The index lives in the machine's repo directory that the daemon sets up (see [daemon.md](daemon.md#workspace)). All workspaces of a repo on the machine share it, so the index is built once per machine.
+- The index lives in the machine's repo directory that the daemon sets up (see [daemon.md](daemon.md#workspace)). All cloud workspaces of a cloud repo on the machine share it, so the index is built once per machine.
 - Before building or updating the index, the CLI calls `Store.FetchCommitGraph(view heads)`. jj-lib's stock index builder then runs against the daemon's cache with no per-commit network round trips.
 
 ## Working copy
 
-The custom `WorkingCopy` / `LockedWorkingCopy` never writes files to disk; the daemon serves the files through FUSE.
+The custom `WorkingCopy` / `LockedWorkingCopy` backs cloud workspaces. It never writes files to disk; the daemon serves the files through FUSE.
 
 - **State:** the CLI's working-copy state (the commit's merged tree IDs) is an opaque blob to the daemon. Stock jj logic detects stale working copies from what `GetState` returns.
 - **Checkout:**

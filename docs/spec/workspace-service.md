@@ -1,6 +1,6 @@
 # workspace-service
 
-Go gRPC server that stores each repo's objects, operation log and op heads. See [DESIGN.md](DESIGN.md) for the overall design.
+Go gRPC server that stores each cloud repo's objects, operation log and op heads. See [DESIGN.md](DESIGN.md) for the overall design.
 
 The service reads Git commit and tree objects only to walk parents and trees, and treats operations and views as opaque objects.
 
