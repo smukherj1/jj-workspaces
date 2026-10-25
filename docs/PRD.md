@@ -33,7 +33,7 @@ Developers and build systems working in a large source repository have to clone 
  │   jj CLI     │ ────────────── IPC ─────────────▶ │   Local Daemon     │ ─RPC─▶ │  Remote Service  │
  │ (custom      │                                   │ - object cache     │        │ - object store   │
  │  backend +   │ ◀──── VFS mount (FUSE) ─────────▶ │ - VFS (FUSE)       │        │ - commit graph   │
- │  working     │                                   │ - prefetch         │        │ - op log / refs  │
+ │  working     │                                   │ - prefetch         │        │ - op log + heads │
  │  copy)       │                                   │ - overlay of edits │        │                  │
  └──────────────┘                                   └────────────────────┘        └──────────────────┘
 ```
@@ -42,23 +42,22 @@ Developers and build systems working in a large source repository have to clone 
 
 - Implements jj-lib's `Backend` trait (commits, trees, files, symlinks, copy tracking) by calling the local daemon over IPC (for example gRPC over a Unix socket).
 - Implements a custom `WorkingCopy` / `LockedWorkingCopy` that does **not** write files to disk. A checkout tells the daemon to point the VFS at a root tree ID, and a snapshot asks the daemon for the set of modified paths instead of scanning the tree.
-- Registered through jj's store factories so that `jj init --backend=<name>` (or an equivalent) creates a virtual workspace.
+- Registered through jj's store factories. Creating a workspace goes through the local daemon, which sets up the machine's repo directory on first use and mounts the workspace; no local clone is made.
 
 ### 5.2 Local daemon
 
-- **Pure cache, not a source of truth:** the daemon caches data from the remote service and gives jj a common API for talking to it. Everything durable lives on the remote.
+- **Cache plus local state:** the daemon caches data from the remote service and gives jj a common API for talking to it. Everything shared lives on the remote. The only data held solely by the daemon is the overlay of edits not yet snapshotted, per-workspace working-copy state, and objects not yet uploaded; cache eviction never touches it.
 - **Content-addressed cache** for trees and file blobs on local disk, with size limits and LRU eviction. It is shared across all workspaces on the machine.
 - **VFS layer:** serves a read-only view of the checked-out tree with a copy-on-write overlay for local edits. It tracks dirty paths so that jj snapshots cost O(changed files), not O(repo size).
 - **Lazy fetch:** directory listings and file metadata are served from tree objects, and blob contents are fetched from the remote on first `read()`.
 - **Prefetch:** batched and predictive fetching (for example by directory, by build target, or from historical access patterns) to avoid round-trip storms.
-- **Write path:** uploads new objects (commits, trees, blobs) to the remote asynchronously or on demand. Pushes must be durable before refs are published.
+- **Write path:** uploads new objects (commits, trees, blobs) to the remote in the background as they are written. Publishing an operation (updating op heads) waits until every object it references is on the remote.
 
 ### 5.3 Remote service
 
-- Source of truth and durable storage for all repository data: commits, trees, file contents, the operation log, view state, and refs.
+- Source of truth and durable storage for all repository data: commits, trees, file contents, the operation log, view state, and op heads.
 - Provides batch fetch APIs, tree and metadata queries (so the client can list a directory without downloading blobs), and ideally server-side diff and history queries for large ranges.
 - Sharing between machines goes through the remote service. Because the operation log and view state live here, a user can pick up the same repository state from any machine.
-- Provides batch fetch APIs and tree and metadata queries (so the client can list a directory without downloading blobs).
 
 ### 5.4 Object IDs
 
@@ -68,9 +67,9 @@ Developers and build systems working in a large source repository have to clone 
 
 | ID  | Requirement                                                                                                           | Priority |
 | --- | --------------------------------------------------------------------------------------------------------------------- | -------- |
-| R1  | `jj workspace add` / checkout completes in < 5 s, independent of repo size                                            | P0       |
+| R1  | `jj workspace add` / checkout completes in < 5 s; cost scales with the diff between trees, not the repo size          | P0       |
 | R2  | File contents are downloaded only on first access, and stat/readdir need no blob downloads                            | P0       |
-| R3  | `jj status` / snapshot time scales with the number of modified files, not the total file count                        | P0       |
+| R3  | `jj status` / snapshot time scales with modified files plus ignored files in the mount, not the total file count      | P0       |
 | R4  | Cached reads within ~1.5× of native local-disk latency                                                                | P0       |
 | R5  | Correct jj semantics: commits, rewrites, conflicts, and the operation log behave the same as with the default backend | P0       |
 | R6  | Daemon crash or restart does not lose uncommitted local edits                                                         | P0       |
@@ -95,7 +94,7 @@ Developers and build systems working in a large source repository have to clone 
 ## 9. Risks
 
 - **Tool behavior:** tools that walk the whole tree (grep, IDE indexers, `find`) will trigger mass fetches. Mitigations: sparse/scoped views, fetch throttling, and server-side search.
-- **FUSE performance and complexity:** kernel round-trips and page-cache behavior. Mitigations: kernel caching options, passthrough for materialized files, and benchmarks done early.
+- **FUSE performance and complexity:** kernel round-trips and page-cache behavior. Mitigations: kernel caching options, passthrough for materialized files (FUSE passthrough needs Linux 6.9+), and benchmarks done early.
 - **jj API stability:** the `Backend` and `WorkingCopy` traits change between jj releases, so we need to pin a version and track upstream.
 - **Consistency:** races between VFS edits, snapshots, and checkouts. Defining the locking semantics is essential.
 
@@ -104,3 +103,4 @@ Developers and build systems working in a large source repository have to clone 
 - Server-side diff and history queries for large commit ranges.
 - Windows and macOS support, using platform alternatives to FUSE (for example ProjFS on Windows and FSKit on macOS).
 - Server side authentication, authorization (ACLs), and replication.
+- Server-side commit index for revset evaluation (`jj log`) on large histories. In v1, jj-lib builds its index locally from the commit graph.
