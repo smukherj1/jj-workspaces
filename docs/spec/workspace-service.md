@@ -4,6 +4,18 @@ Go gRPC server that stores each cloud repo's objects, operation log and op heads
 
 The service reads Git commit and tree objects only to walk parents and trees, and treats operations and views as opaque objects.
 
+## Running
+
+- **Flags:** `--listen <host:port>` (default `localhost:7470`; port `0` picks a free port) and
+  `--version`, which prints `jjw-workspace-service <version>`.
+- **Startup:** once the listener binds, the service prints `listening on <host:port>` to stdout
+  with the resolved port. Test harnesses rely on this line. Logs go to stderr.
+- **Health:** `grpc.health.v1` reports `SERVING` for `""` and for `jjcw.service.v1.WorkspaceService`.
+  Server reflection is enabled.
+- **Shutdown:** on SIGINT or SIGTERM, health switches to `NOT_SERVING`, then the server stops
+  gracefully, waiting at most 5 s for in-flight RPCs before closing the remaining connections.
+- **Transport:** plaintext gRPC over HTTP/2, with no TLS or auth in v1.
+
 ## Storage
 
 - **Objects:** commits, trees, blobs, operations and views, keyed by ID.

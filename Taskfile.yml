@@ -1,0 +1,46 @@
+version: '3'
+
+vars:
+  VERSION:
+    sh: awk -F'"' '/^\[workspace\.package\]/ {p = 1; next} /^\[/ {p = 0} p && /^version *=/ {print $2}' Cargo.toml
+  GO_LDFLAGS: -X github.com/smukherj1/jj-workspaces/lib-go/version.Version={{.VERSION}}
+  BIN_DIR: '{{.ROOT_DIR}}/target/debug'
+
+tasks:
+  proto:
+    desc: Generate Go code from the protos into gen-go
+    cmds:
+      - buf generate
+
+  build:
+    desc: Build jjw, jjw-daemon and jjw-workspace-service into target/debug
+    cmds:
+      - mkdir -p target/debug
+      - go build -ldflags "{{.GO_LDFLAGS}}" -o target/debug/ ./bin-go/...
+      - cargo build -p jjw
+
+  lint:
+    desc: Check protos, Go and Rust for lint and formatting
+    cmds:
+      - buf lint
+      - buf format --diff --exit-code
+      - test -z "$(gofmt -l bin-go lib-go gen-go)" || { gofmt -l bin-go lib-go gen-go; exit 1; }
+      - go vet ./...
+      - cargo fmt --check
+      - cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    desc: Run the Go and Rust unit tests
+    cmds:
+      - go test ./...
+      - cargo test --workspace --exclude e2e
+
+  e2e:
+    desc: Build everything and run the end-to-end tests
+    deps: [build]
+    env:
+      JJW_BIN: '{{.BIN_DIR}}/jjw'
+      JJW_DAEMON_BIN: '{{.BIN_DIR}}/jjw-daemon'
+      JJW_SERVICE_BIN: '{{.BIN_DIR}}/jjw-workspace-service'
+    cmds:
+      - cargo test -p e2e

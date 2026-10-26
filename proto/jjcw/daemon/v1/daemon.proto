@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package jjcw.daemon.v1;
+
+option go_package = "github.com/smukherj1/jj-workspaces/gen-go/jjcw/daemon/v1;daemonv1";
+
+// Services served by jjw-daemon to the CLI over a Unix socket. RPCs are added in the milestone that
+// first needs them. See docs/spec/daemon.md.
+
+service Store {}
+
+service OpStore {}
+
+service OpHeads {}
+
+service WorkingCopy {}
+
+service Workspace {}
+
+service Prefetch {}
+
+// Diagnostics.
+service Daemon {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string daemon_version = 1;
+  string service_address = 2;
+  ServiceStatus service_status = 3;
+}
+
+message ServiceStatus {
+  ServiceStatusCode code = 1;
+  string details = 2;
+}
+
+enum ServiceStatusCode {
+  SERVICE_STATUS_CODE_UNSPECIFIED = 0;
+  SERVICE_STATUS_CODE_OK = 1;
+  SERVICE_STATUS_CODE_UNHEALTHY = 2;
+  SERVICE_STATUS_CODE_UNREACHABLE = 3;
+}

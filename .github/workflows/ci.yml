@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Installs the toolchain pinned in rust-toolchain.toml.
+      - name: Set up Rust
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          setup_only: true
+
+      - name: Lint
+        run: go tool task lint
+
+      - name: Test
+        run: go tool task test
+
+      - name: End-to-end tests
+        run: go tool task e2e
+
+      - name: Generated code is current
+        run: go tool task proto && git diff --exit-code
+
+      - name: Proto breaking changes
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags --depth=1 origin main:main
+          buf breaking --against '.git#branch=main'

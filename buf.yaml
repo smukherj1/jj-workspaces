@@ -1,0 +1,12 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # Service names match the spec (Store, OpStore, Daemon, ...).
+    - SERVICE_SUFFIX
+breaking:
+  use:
+    - FILE

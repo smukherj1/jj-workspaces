@@ -4,7 +4,7 @@ Detailed plan for [M1](mvp-impl-roadmap.md#m1-skeleton-through-the-stack). The t
 start and call each other, with no repository functionality yet. See [DESIGN.md](../spec/DESIGN.md)
 for the overall design.
 
-**Status:** Not started.
+**Status:** In progress. Sections 0 and 1 are done, except the first CI run.
 
 ## Outcome
 
@@ -44,7 +44,8 @@ skew checks between the CLI and the daemon (M6).
 - **Build output:** all three binaries go to `target/debug/`. Cargo puts `jjw` there and the Go
   build writes its binaries to the same directory.
 - **Task runner:** [Task](https://taskfile.dev) (`Taskfile.yml`), pinned as a `tool` directive in
-  `go.mod`. `task <name>` in this plan means `go tool task <name>`.
+  `go.mod`. `task <name>` in this plan means `go tool task <name>`. It is pinned at `v3.53.1`, the
+  last release that builds with Go 1.25 (`v3.54` needs Go 1.26), so `go.mod` says `go 1.25.10`.
 
 ## Repo layout
 
@@ -73,18 +74,19 @@ Taskfile.yml
 
 Outcome: an empty build in both languages, proto generation, lint, and CI.
 
-- [ ] `go.mod`. grpc-go `v1.84.x` and `google.golang.org/protobuf`. `protoc-gen-go`,
+- [x] `go.mod`. grpc-go `v1.84.x` and `google.golang.org/protobuf`. `protoc-gen-go`,
       `protoc-gen-go-grpc` and Task (`github.com/go-task/task/v3/cmd/task`) are pinned as `tool`
       directives so `go tool` runs them at a fixed version.
-- [ ] Root `Cargo.toml` with `[workspace]` members `bin-rs/*` and `e2e`, `edition = "2024"`, and
+- [x] Root `Cargo.toml` with `[workspace]` members `bin-rs/*` and `e2e`, `edition = "2024"`, and
       `workspace.package.version = "0.1.0"`. Add `rust-toolchain.toml` (`1.97.1`, with `rustfmt` and
-      `clippy`).
-- [ ] `buf.yaml` (v2): module `proto`, lint `STANDARD` except `SERVICE_SUFFIX`, so service names match
+      `clippy`). `bin-rs/jjw` and `e2e` start as placeholder crates so the workspace builds; sections
+      3 and 4 fill them in.
+- [x] `buf.yaml` (v2): module `proto`, lint `STANDARD` except `SERVICE_SUFFIX`, so service names match
       the spec (`Store`, `OpStore`, `Daemon`, ...). Breaking checks use `FILE`.
-- [ ] `buf.gen.yaml`: local plugins through `go tool protoc-gen-go` and `go tool protoc-gen-go-grpc`,
+- [x] `buf.gen.yaml`: local plugins through `go tool protoc-gen-go` and `go tool protoc-gen-go-grpc`,
       output to `gen-go` with `paths=source_relative`.
-- [ ] `proto/jjcw/service/v1/workspace_service.proto`: `service WorkspaceService {}`.
-- [ ] `proto/jjcw/daemon/v1/daemon.proto`: empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`,
+- [x] `proto/jjcw/service/v1/workspace_service.proto`: `service WorkspaceService {}`.
+- [x] `proto/jjcw/daemon/v1/daemon.proto`: empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`,
       `Workspace` and `Prefetch` services, plus:
 
       ```proto
@@ -111,7 +113,7 @@ Outcome: an empty build in both languages, proto generation, lint, and CI.
               }
               ```
 
-- [ ] `Taskfile.yml` (schema `version: '3'`). `VERSION` is a dynamic variable read from
+- [x] `Taskfile.yml` (schema `version: '3'`). `VERSION` is a dynamic variable read from
       `workspace.package.version` in the root `Cargo.toml`. Each task has a `desc`, so
       `task --list` documents them. Tasks:
   - `proto`: `buf generate`.
@@ -123,33 +125,37 @@ Outcome: an empty build in both languages, proto generation, lint, and CI.
   - `test`: `go test ./...` and `cargo test --workspace --exclude e2e`.
   - `e2e`: depends on `build`, then `cargo test -p e2e` with the binary paths in env vars (see
     section 4).
-- [ ] `.gitignore`: add `/target`.
-- [ ] `.github/workflows/ci.yml` on push and pull request, on `ubuntu-latest`:
+- [x] `.gitignore`: add `/target`.
+- [x] `.github/workflows/ci.yml` on push and pull request, on `ubuntu-latest`:
   - `actions/setup-go` (1.25), rustup from `rust-toolchain.toml`, `bufbuild/buf-action`.
   - `task lint`, `task test` and `task e2e`.
   - `task proto && git diff --exit-code`, so committed generated code is current.
   - On pull requests: `buf breaking --against '.git#branch=main'`.
 
-Done when `task build lint test` passes locally and in CI.
+Done when `task build lint test` passes locally and in CI. Passes locally; CI hasn't run yet.
 
 ## 1. Service
 
 Outcome: `jjw-workspace-service` starts, serves health and an empty `WorkspaceService`, and shuts down
 cleanly.
 
-- [ ] `lib-go/service`: `NewServer() *grpc.Server` registers `WorkspaceService` (embedding
+- [x] `lib-go/service`: `NewServer() *Server` registers `WorkspaceService` (embedding
       `UnimplementedWorkspaceServiceServer`), `grpc.health.v1` with status `SERVING` for `""` and
-      `jjcw.service.v1.WorkspaceService`, and server reflection.
-- [ ] `bin-go/jjw-workspace-service`: flag `--listen` (default `localhost:7470`; port `0` picks a free
+      `jjcw.service.v1.WorkspaceService`, and server reflection. `Server` wraps the `*grpc.Server`
+      and the health server, so `Serve(lis)` and `Shutdown(timeout)` (`NOT_SERVING`, bounded
+      `GracefulStop`, then `Stop`) live in the library.
+- [x] `bin-go/jjw-workspace-service`: flag `--listen` (default `localhost:7470`; port `0` picks a free
       port). After the listener binds, print `listening on <host:port>` to stdout with the resolved
       port. The harness relies on this line. On SIGINT or SIGTERM, set health to `NOT_SERVING`,
       `GracefulStop` with a 5 s bound, then `Stop`.
-- [ ] `--version` prints `jjw-workspace-service <version>`.
+- [x] `--version` prints `jjw-workspace-service <version>`.
 
 Tests (`go test`):
 
-- [ ] Start the server on `localhost:0` with bufconn or a real listener. A health `Check` returns
+- [x] Start the server on `localhost:0` with bufconn or a real listener. A health `Check` returns
       `SERVING` for `""` and for `jjcw.service.v1.WorkspaceService`.
+- [x] `Shutdown` sends `NOT_SERVING` to a health `Watch` stream and returns even though the open
+      stream holds up `GracefulStop`.
 
 Done when the test passes and `target/debug/jjw-workspace-service --listen localhost:0` prints its
 address and answers `grpcurl -plaintext <addr> grpc.health.v1.Health/Check`.
@@ -293,7 +299,7 @@ After the code is in:
   - Add `Daemon | GetStatus | diagnostics` to the API table.
   - Document flags, socket handling and graceful shutdown.
   - Note that RPCs are added per milestone.
-- [ ] [workspace-service.md](../spec/workspace-service.md): health, `--listen` and the
+- [x] [workspace-service.md](../spec/workspace-service.md): health, `--listen` and the
       `listening on` line.
 - [ ] [jj-cli.md](../spec/jj-cli.md):
   - The binary is `jjw` and custom commands go under `jjw cws`.

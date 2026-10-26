@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package jjcw.service.v1;
+
+option go_package = "github.com/smukherj1/jj-workspaces/gen-go/jjcw/service/v1;servicev1";
+
+// Served by jjw-workspace-service to the daemon. RPCs are added in the milestone that first needs
+// them. See docs/spec/workspace-service.md.
+service WorkspaceService {}

@@ -1,0 +1,10 @@
+[package]
+name = "jjw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "jjw"
+path = "src/main.rs"
