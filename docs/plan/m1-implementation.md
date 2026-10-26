@@ -4,7 +4,7 @@ Detailed plan for [M1](mvp-impl-roadmap.md#m1-skeleton-through-the-stack). The t
 start and call each other, with no repository functionality yet. See [DESIGN.md](../spec/DESIGN.md)
 for the overall design.
 
-**Status:** In progress. Sections 0 and 1 are done, except the first CI run.
+**Status:** In progress. Sections 0, 1 and 2 are done, except the first CI run.
 
 ## Outcome
 
@@ -165,13 +165,13 @@ address and answers `grpcurl -plaintext <addr> grpc.health.v1.Health/Check`.
 Outcome: `jjw-daemon` serves its API on a Unix socket and reports the service's health with a
 bounded timeout.
 
-- [ ] `bin-go/jjw-daemon` flags:
+- [x] `bin-go/jjw-daemon` flags:
   - `--socket` (default `$XDG_RUNTIME_DIR/jjw/daemon.sock`). If `XDG_RUNTIME_DIR` is unset and there is
     no flag, exit with an error that names `--socket`.
   - `--service-addr` (required).
   - `--service-timeout` (default `10s`). It bounds every call to the service.
   - `--version` prints `jjw-daemon <version>`.
-- [ ] Socket handling (`lib-go/daemon`):
+- [x] Socket handling (`lib-go/daemon`):
   - Create the socket's parent directory with mode `0700` if it doesn't exist.
   - If the socket file exists, dial it. A successful connection means another daemon is running:
     exit with `jjw-daemon is already running on <socket>`. Connection refused means the file is
@@ -179,29 +179,30 @@ bounded timeout.
   - Listen, then `chmod 0600` the socket. Print `listening on <socket>` to stdout.
   - On SIGINT or SIGTERM, `GracefulStop` with a 5 s bound, then `Stop`. Closing the Go listener
     unlinks the socket.
-- [ ] `lib-go/daemon/serviceclient`: `grpc.NewClient(addr, insecure credentials)`, created once at
+- [x] `lib-go/daemon/serviceclient`: `grpc.NewClient(addr, insecure credentials)`, created once at
       startup. The daemon starts even if the service is down, because cache hits must work offline.
       `Health(ctx)` calls `grpc.health.v1.Health/Check` for `""` with a `--service-timeout` deadline.
-- [ ] `lib-go/daemon` servers:
+- [x] `lib-go/daemon` servers:
   - `grpc.health.v1` for the daemon itself (`SERVING`).
   - Register the empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`, `Workspace` and `Prefetch`
-    services. If `protoc-gen-go-grpc` emits nothing for a service without methods, skip registering
-    it and note that here.
-  - `Daemon.GetStatus` returns `version.Version` and `--service-addr`, and maps `Health` to a status:
-    `SERVING` to `SERVING`; `NOT_SERVING` or any other health status to `NOT_SERVING`; an RPC error
-    (unavailable, deadline exceeded) to `UNREACHABLE`, with `service_error` set to the error, e.g.
-    `deadline exceeded after 10s`.
+    services. `protoc-gen-go-grpc` emits registration code for services without methods, so all
+    six are registered.
+  - Server reflection, so `grpcurl` can call the daemon over its socket.
+  - `Daemon.GetStatus` returns `version.Version` and `--service-addr`, and maps `Health` to a
+    `ServiceStatusCode`: `SERVING` to `OK`; `NOT_SERVING` or any other health status to `UNHEALTHY`,
+    with the status name in `details`; an RPC error (unavailable, deadline exceeded) to
+    `UNREACHABLE`, with `details` set to the error, e.g. `deadline exceeded after 10s`.
 
 Tests (`go test`):
 
-- [ ] `GetStatus` with a real in-process service: `SERVING`.
-- [ ] `GetStatus` with nothing listening at the service address: `UNREACHABLE`, returned well within
+- [x] `GetStatus` with a real in-process service: `OK`.
+- [x] `GetStatus` with nothing listening at the service address: `UNREACHABLE`, returned well within
       the timeout.
-- [ ] `GetStatus` against a TCP listener that accepts but never speaks HTTP/2, with a 500 ms
+- [x] `GetStatus` against a TCP listener that accepts but never speaks HTTP/2, with a 500 ms
       timeout: `UNREACHABLE` with a deadline error, in about 500 ms.
-- [ ] `GetStatus` with a service health status of `NOT_SERVING`: `NOT_SERVING`.
-- [ ] Socket handling: a stale socket file is replaced, a live daemon blocks a second one, and the
-      parent directory is `0700`.
+- [x] `GetStatus` with a service health status of `NOT_SERVING`: `UNHEALTHY`.
+- [x] Socket handling: a stale socket file is replaced, a live daemon blocks a second one, a path
+      that isn't a socket is refused, the parent directory is `0700` and the socket `0600`.
 
 Done when the tests pass and a manual
 `target/debug/jjw-daemon --socket /tmp/d.sock --service-addr <addr>` answers `GetStatus` over the
@@ -295,7 +296,7 @@ Done when `task e2e` passes locally and in CI.
 
 After the code is in:
 
-- [ ] [daemon.md](../spec/daemon.md):
+- [x] [daemon.md](../spec/daemon.md):
   - Add `Daemon | GetStatus | diagnostics` to the API table.
   - Document flags, socket handling and graceful shutdown.
   - Note that RPCs are added per milestone.

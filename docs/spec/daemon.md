@@ -2,9 +2,31 @@
 
 Go binary running on each developer and build machine. It serves the jj CLI over gRPC on a Unix socket, owns one FUSE mount per cloud workspace, and talks to the workspace service. See [DESIGN.md](DESIGN.md) for the overall design and [workspace-service.md](workspace-service.md#api) for the API it calls.
 
+## Running
+
+- **Flags:**
+  - `--socket <path>` (default `$XDG_RUNTIME_DIR/jjw/daemon.sock`). If `XDG_RUNTIME_DIR` is unset
+    and the flag isn't given, the daemon exits with an error that names `--socket`.
+  - `--service-addr <host:port>` (required): the workspace service.
+  - `--service-timeout <duration>` (default `10s`): bounds every call to the service.
+  - `--version` prints `jjw-daemon <version>`.
+- **Socket:** the daemon creates the socket's parent directory with mode `0700` if it doesn't exist.
+  If the socket file already exists, the daemon dials it: an answer means another daemon is running,
+  and the new one exits with `jjw-daemon is already running on <socket>`; connection refused means
+  the file is stale, and it is removed. A path that exists but isn't a socket is an error. The
+  socket gets mode `0600`. Once it listens, the daemon prints `listening on <socket>` to stdout.
+  Test harnesses rely on this line. Logs go to stderr.
+- **Startup without the service:** the daemon starts even if the service is down, because cache hits
+  must work offline. It connects to the service lazily, on the first call.
+- **Health:** `grpc.health.v1` reports `SERVING` for `""`. Server reflection is enabled.
+- **Shutdown:** on SIGINT or SIGTERM, health switches to `NOT_SERVING`, then the server stops
+  gracefully, waiting at most 5 s for in-flight RPCs before closing the remaining connections.
+  Closing the listener unlinks the socket.
+
 ## API
 
 Served to the CLI over gRPC on a Unix socket. It mirrors the jj-lib traits so the CLI stays a thin shim.
+The services are declared up front; each RPC is added in the milestone that first needs it.
 
 | Service       | RPCs                                                                                           | Backs jj-lib trait                  |
 | ------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------- |
@@ -14,6 +36,16 @@ Served to the CLI over gRPC on a Unix socket. It mirrors the jj-lib traits so th
 | `WorkingCopy` | `Checkout(ws, tree_id)`, `ListDirty(ws) → paths[]`, `Snapshot(ws, paths[]) → entries[]`, `Finish(ws, op_id, entries[], tree_id, state)`, `Reset(ws, tree_id, state)`, `GetState(ws)`, `Lock/Unlock(ws)` | `WorkingCopy` / `LockedWorkingCopy` |
 | `Workspace`   | `Create(repo, ws, mount_path)`, `Delete(ws)`, `List`                                           | workspace lifecycle                 |
 | `Prefetch`    | `Prefetch(ws, paths[] \| tree_id)`                                                             | build hint (R8)                     |
+| `Daemon`      | `GetStatus`                                                                                    | diagnostics                         |
+
+### Daemon
+
+- **`GetStatus`** returns the daemon's version, the service address and the service's status, from a
+  `grpc.health.v1` `Check` of `""` bounded by `--service-timeout`:
+  - `OK` when the service reports `SERVING`.
+  - `UNHEALTHY` for any other health status, with the status name (e.g. `NOT_SERVING`) as `details`.
+  - `UNREACHABLE` when the call fails, with the error as `details`, e.g.
+    `deadline exceeded after 10s` or `Unavailable: connection error: ...`.
 
 ### Store and OpStore
 
