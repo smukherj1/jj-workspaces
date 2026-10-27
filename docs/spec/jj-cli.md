@@ -2,7 +2,39 @@
 
 Rust binary for jj and a minimal shim to interact with the daemon. See [DESIGN.md](DESIGN.md) for the overall design and [daemon.md](daemon.md#api) for the API it calls.
 
-The binary is stock jj with custom store and working copy implementations registered through jj-lib's store factories. It pins one jj version, and the `Backend` and `WorkingCopy` traits, plus the commit encoding below, are checked against each new version before upgrading.
+The binary is `jjw`: stock jj with custom store and working copy implementations registered through jj-lib's store factories. It pins one jj version, and the `Backend` and `WorkingCopy` traits, plus the commit encoding below, are checked against each new version before upgrading.
+
+## Binary
+
+- `jjw --version` prints the project version and the pinned jj version, e.g. `jjw 0.1.0 (jj 0.46.0)`.
+- Custom commands live under `jjw cws <sub>`. All other commands are stock jj.
+- **Repo creation is blocked** until cloud repos can be created: a dispatch hook rejects `jjw git init`,
+  `jjw git clone` and `jjw debug init-simple` with `jjw can't create repositories yet` before anything
+  touches disk. Existing stock jj repos still load (unsupported and untested).
+
+## Daemon connection
+
+- The socket path comes from the jj config key `cws.daemon-socket`, falling back to
+  `$XDG_RUNTIME_DIR/jjw/daemon.sock`. If neither is set, commands that need the daemon fail and point
+  to the config key.
+- jj runs commands on `pollster`, so the client owns a current-thread tokio runtime and blocks on
+  each call. It connects with a 5 s timeout and sets a 30 s deadline on each RPC, longer than the
+  daemon's own timeout for calls to the service.
+- If the daemon can't be reached, commands fail with `can't reach jjw-daemon at <socket>: <cause>`
+  and a hint to start it.
+
+## Commands
+
+- **`jjw cws status`** calls `Daemon.GetStatus` and prints:
+
+  ```
+  daemon: ok (version 0.1.0, socket /run/user/1000/jjw/daemon.sock)
+  service localhost:7470: SERVING
+  ```
+
+  A service that isn't serving is shown as `UNHEALTHY` or `UNREACHABLE`, followed by the daemon's
+  details in parentheses. The command exits 0 only when the service is serving, and otherwise fails
+  with `workspace service is <status>` after printing both lines.
 
 ## Store backends
 

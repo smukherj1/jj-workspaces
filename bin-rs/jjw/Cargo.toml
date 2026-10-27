@@ -8,3 +8,18 @@ publish.workspace = true
 [[bin]]
 name = "jjw"
 path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+jj-cli = "=0.46.0"
+jj-lib = "=0.46.0"
+prost = "0.14"
+tokio = { version = "1", features = ["rt", "net"] }
+tonic = "0.14"
+tonic-prost = "0.14"
+tower = "0.5"
+
+[build-dependencies]
+protox = "0.10"
+tonic-prost-build = "0.14"

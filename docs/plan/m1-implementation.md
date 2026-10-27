@@ -4,7 +4,7 @@ Detailed plan for [M1](mvp-impl-roadmap.md#m1-skeleton-through-the-stack). The t
 start and call each other, with no repository functionality yet. See [DESIGN.md](../spec/DESIGN.md)
 for the overall design.
 
-**Status:** In progress. Sections 0, 1 and 2 are done, except the first CI run.
+**Status:** In progress. Sections 0, 1, 2 and 3 are done, except the first CI run.
 
 ## Outcome
 
@@ -212,17 +212,17 @@ socket.
 
 Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to create repos.
 
-- [ ] `bin-rs/jjw` crate (`jjw`, binary `jjw`). Dependencies: `jj-cli = "=0.46.0"`,
+- [x] `bin-rs/jjw` crate (`jjw`, binary `jjw`). Dependencies: `jj-cli = "=0.46.0"`,
       `jj-lib = "=0.46.0"`, `clap`, tonic `0.14`, `tonic-prost`, `prost`, `tokio` (`rt`, `net`),
       `hyper-util` and `tower` for the Unix socket connector. Build dependencies: `protox 0.10` and
       `tonic-prost-build 0.14`.
-- [ ] `build.rs`: compile `proto/jjcw/daemon/v1/daemon.proto` (`../../proto` from the crate) with
+- [x] `build.rs`: compile `proto/jjcw/daemon/v1/daemon.proto` (`../../proto` from the crate) with
       protox, generate client code only with `tonic-prost-build` (`compile_fds`,
       `build_server(false)`), and set `JJ_LIB_VERSION` from `Cargo.lock`.
-- [ ] `main.rs`: `CliRunner::init().version("<our version> (jj <JJ_LIB_VERSION>)")`, then
-      `.add_dispatch_hook(block_repo_creation)` and `.add_subcommand(run_cws_command)`. `jjw --version`
-      prints `jjw 0.1.0 (jj 0.46.0)`.
-- [ ] `daemon_client.rs`: `DaemonClient::connect(settings)`.
+- [x] `main.rs`: `CliRunner::init().version("<our version> (jj <JJ_LIB_VERSION>)")`, then
+      `.add_dispatch_hook(block_repo_creation)` and `.add_subcommand(run_cws_command)`. `.name("jjw")`
+      is also needed, or clap prints `jj`. `jjw --version` prints `jjw 0.1.0 (jj 0.46.0)`.
+- [x] `daemon_client.rs`: `DaemonClient::connect(settings)`.
   - The socket path comes from jj config `cws.daemon-socket`, falling back to
     `$XDG_RUNTIME_DIR/jjw/daemon.sock`. If neither is available, error and point to the config key.
   - jj runs commands with `pollster`, so the client owns a current-thread tokio runtime and
@@ -231,7 +231,7 @@ Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to
     and sets a 30 s deadline on each RPC (longer than the daemon's service timeout).
   - If the connection fails: user error `can't reach jjw-daemon at <socket>: <cause>`, with the hint
     `Start it with: jjw-daemon --service-addr <host:port>`.
-- [ ] `commands/cws/status.rs`: `jjw cws status` calls `GetStatus` and prints:
+- [x] `commands/cws/status.rs`: `jjw cws status` calls `GetStatus` and prints:
 
       ```
               daemon: ok (version 0.1.0, socket /run/user/1000/jjw/daemon.sock)
@@ -244,15 +244,15 @@ Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to
               `workspace service is <status>` (exit 1). An unreachable daemon is the user error above
               (exit 1).
 
-- [ ] `block_repo_creation.rs`: the dispatch hook checks `command_helper.matches()`. For `git init`,
+- [x] `block_repo_creation.rs`: the dispatch hook checks `command_helper.matches()`. For `git init`,
       `git clone` or `debug init-simple`, it returns user error
       `jjw can't create repositories yet` before anything touches disk. Otherwise it calls the inner
       dispatch.
 
 Tests (`cargo test -p jjw`):
 
-- [ ] Unit test: the socket path resolves from config first, then from `XDG_RUNTIME_DIR`.
-- [ ] Unit test: `GetStatusResponse` formats into the expected lines and exit outcome for each
+- [x] Unit test: the socket path resolves from config first, then from `XDG_RUNTIME_DIR`.
+- [x] Unit test: `GetStatusResponse` formats into the expected lines and exit outcome for each
       `ServiceStatus`.
 
 Done when the tests pass and `jjw log` in a stock jj repo still works, i.e. the hook doesn't break
@@ -302,7 +302,7 @@ After the code is in:
   - Note that RPCs are added per milestone.
 - [x] [workspace-service.md](../spec/workspace-service.md): health, `--listen` and the
       `listening on` line.
-- [ ] [jj-cli.md](../spec/jj-cli.md):
+- [x] [jj-cli.md](../spec/jj-cli.md):
   - The binary is `jjw` and custom commands go under `jjw cws`.
   - The `cws.daemon-socket` config key.
   - `jjw cws status`, the repo creation block, and the version string.
