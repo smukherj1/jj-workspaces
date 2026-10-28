@@ -4,3 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+
+[dependencies]
+insta = { version = "1", features = ["filters"] }
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "net", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "0.14"
+tonic-health = "0.14"

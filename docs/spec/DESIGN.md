@@ -6,9 +6,11 @@ A *cloud workspace* is a jj workspace whose working copy the daemon serves on de
 
 ## Components
 
-- [jj-cli.md](jj-cli.md): Custom jj binary using jj-lib to use the daemon as the storage and working copy backend.
-- [daemon.md](daemon.md): Daemon running on developer or build machine interfacing between the jj cli and the workspace service and providing a local cache. Serves the API the CLI calls.
-- [workspace-service.md](workspace-service.md): Remote workspace service for source storage and serving. Serves the API the daemon calls.
+- [jj-cli.md](jj-cli.md): `jjw` (Rust), a custom jj binary using jj-lib to use the daemon as the storage and working copy backend.
+- [daemon.md](daemon.md): `jjw-daemon` (Go), running on a developer or build machine, interfacing between the jj cli and the workspace service and providing a local cache. Serves the API the CLI calls.
+- [workspace-service.md](workspace-service.md): `jjw-workspace-service` (Go), the remote workspace service for source storage and serving. Serves the API the daemon calls.
+
+All three binaries share one project version, `workspace.package.version` in the root `Cargo.toml`, and report it with `--version`.
 
 ## Overview
 
@@ -27,7 +29,7 @@ jj semantics (conflict materialization, ignore rules, change IDs, merging concur
 ## Interfaces
 
 - **jj-cli → daemon:** gRPC over a Unix socket, mirroring the jj-lib traits so the CLI stays a thin shim. See [daemon.md](daemon.md#api).
-- **daemon → workspace-service:** gRPC, with coarse, batched calls; the daemon never asks for one object at a time if it can avoid it. See [workspace-service.md](workspace-service.md#api).
+- **daemon → workspace-service:** plaintext gRPC over HTTP/2 (no TLS or auth in v1), with coarse, batched calls; the daemon never asks for one object at a time if it can avoid it. See [workspace-service.md](workspace-service.md#api).
 
 ## Repository model
 

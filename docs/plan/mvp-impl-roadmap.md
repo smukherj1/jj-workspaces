@@ -29,9 +29,11 @@ milestones and for open questions that must be answered before a milestone is do
 
 ## Milestones
 
-**Status:** Not started.
+**Status:** M1 done. M2 not started.
 
 ### M1: Skeleton through the stack
+
+**Status:** Done.
 
 The three binaries build, start and call each other, with no repository functionality yet.
 

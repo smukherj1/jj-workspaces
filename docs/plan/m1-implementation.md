@@ -4,7 +4,7 @@ Detailed plan for [M1](mvp-impl-roadmap.md#m1-skeleton-through-the-stack). The t
 start and call each other, with no repository functionality yet. See [DESIGN.md](../spec/DESIGN.md)
 for the overall design.
 
-**Status:** In progress. Sections 0, 1, 2 and 3 are done, except the first CI run.
+**Status:** Done, except the first CI run.
 
 ## Outcome
 
@@ -252,8 +252,8 @@ Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to
 Tests (`cargo test -p jjw`):
 
 - [x] Unit test: the socket path resolves from config first, then from `XDG_RUNTIME_DIR`.
-- [x] Unit test: `GetStatusResponse` formats into the expected lines and exit outcome for each
-      `ServiceStatus`.
+- `jjw cws status` output and exit codes are covered end to end (serving, unhealthy, unreachable,
+  hanging, daemon down) in `e2e/tests/status.rs`, not by unit tests.
 
 Done when the tests pass and `jjw log` in a stock jj repo still works, i.e. the hook doesn't break
 other commands.
@@ -263,9 +263,9 @@ other commands.
 Outcome: `task e2e` is the one command that builds the three binaries and runs `jjw` against a real
 daemon and service.
 
-- [ ] `task e2e` sets `JJW_BIN`, `JJW_DAEMON_BIN` and `JJW_SERVICE_BIN` to the built binaries in
+- [x] `task e2e` sets `JJW_BIN`, `JJW_DAEMON_BIN` and `JJW_SERVICE_BIN` to the built binaries in
       `target/debug/`. The tests panic with `run via task e2e` if any is unset.
-- [ ] `e2e` crate (dev-only, `publish = false`), with `insta` and `tempfile`:
+- [x] `e2e` crate (dev-only, `publish = false`), with `insta` and `tempfile`:
   - `Service::start()` spawns `jjw-workspace-service --listen 127.0.0.1:0` and reads the
     `listening on` line from stdout with a 10 s bound.
   - `Daemon::start(service_addr, timeout)` spawns `jjw-daemon` with its socket in a short tempdir
@@ -276,21 +276,21 @@ daemon and service.
     stdout and stderr.
   - Every child process is killed on `Drop`.
   - Insta filters replace socket paths, addresses and versions with placeholders.
-- [ ] Tests:
-  - [ ] `status_all_up`: exit 0, both lines snapshotted.
-  - [ ] `status_service_down`: kill the service after the daemon starts, then run status:
+- [x] Tests (`e2e/tests/status.rs` and `e2e/tests/cli.rs`):
+  - [x] `status_all_up`: exit 0, both lines snapshotted.
+  - [x] `status_service_down`: kill the service after the daemon starts, then run status:
         `UNREACHABLE`, exit 1.
-  - [ ] `status_service_hanging`: the daemon points at a test TCP listener that never responds, with
+  - [x] `status_service_hanging`: the daemon points at a test TCP listener that never responds, with
         `--service-timeout 1s`. Status reports `UNREACHABLE` with a deadline error, exit 1, in under
         3 s.
-  - [ ] `status_daemon_down`: no daemon is running. The `can't reach jjw-daemon` error and hint,
+  - [x] `status_daemon_down`: no daemon is running. The `can't reach jjw-daemon` error and hint,
         exit 1.
-  - [ ] `repo_creation_blocked`: `git init`, `git clone <path>` and `debug init-simple` each exit 1
+  - [x] `repo_creation_blocked`: `git init`, `git clone <path>` and `debug init-simple` each exit 1
         with the error, and no `.jj` directory is created.
-  - [ ] `version`: `jjw --version`, `jjw-daemon --version` and `jjw-workspace-service --version` all
+  - [x] `version`: `jjw --version`, `jjw-daemon --version` and `jjw-workspace-service --version` all
         report the same project version.
 
-Done when `task e2e` passes locally and in CI.
+Done when `task e2e` passes locally and in CI. Passes locally; CI hasn't run yet.
 
 ## 5. Spec and roadmap updates
 
@@ -306,9 +306,9 @@ After the code is in:
   - The binary is `jjw` and custom commands go under `jjw cws`.
   - The `cws.daemon-socket` config key.
   - `jjw cws status`, the repo creation block, and the version string.
-- [ ] [DESIGN.md](../spec/DESIGN.md): binary names in Components, one project version, and the
+- [x] [DESIGN.md](../spec/DESIGN.md): binary names in Components, one project version, and the
       plaintext daemon-to-service transport.
-- [ ] Mark M1 and this plan done in the [roadmap](mvp-impl-roadmap.md).
+- [x] Mark M1 and this plan done in the [roadmap](mvp-impl-roadmap.md).
 
 ## Open questions
 

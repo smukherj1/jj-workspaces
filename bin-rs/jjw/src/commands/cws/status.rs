@@ -21,24 +21,25 @@ pub fn run(
 ) -> Result<(), CommandError> {
     let mut client = DaemonClient::connect(command_helper.settings())?;
     let response = client.get_status()?;
-    writeln!(
-        ui.stdout(),
-        "daemon: ok (version {}, socket {})",
-        response.daemon_version,
-        client.socket().display()
-    )?;
     let status = response.service_status.unwrap_or_default();
     let name = match status.code() {
-        ServiceStatusCode::Ok => "OK",
+        ServiceStatusCode::Ok => "SERVING",
         ServiceStatusCode::Unhealthy => "UNHEALTHY",
         ServiceStatusCode::Unreachable => "UNREACHABLE",
         ServiceStatusCode::Unspecified => "UNKNOWN",
     };
-    write!(ui.stdout(), "service {}: {name}", response.service_address)?;
+    let mut stdout = ui.stdout();
+    writeln!(
+        stdout,
+        "daemon: ok (version {}, socket {})",
+        response.daemon_version,
+        client.socket().display()
+    )?;
+    write!(stdout, "service {}: {name}", response.service_address)?;
     if !status.details.is_empty() {
-        write!(ui.stdout(), " ({})", status.details)?;
+        write!(stdout, " ({})", status.details)?;
     }
-    writeln!(ui.stdout())?;
+    writeln!(stdout)?;
     if status.code() != ServiceStatusCode::Ok {
         return Err(user_error(format!("workspace service is {name}")));
     }
