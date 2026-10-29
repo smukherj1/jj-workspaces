@@ -1,16 +1,25 @@
 # JJ Cloud Workspaces Design
 
-See [PRD.md](PRD.md) for the product requirements. This document covers the decisions that span components and the contracts between them. Each component's API, behavior and internals are in its own document.
+See [PRD.md](PRD.md) for the product requirements. This document covers the decisions that span
+components and the contracts between them. Each component's API, behavior and internals are in its
+own document.
 
-A *cloud workspace* is a jj workspace whose working copy the daemon serves on demand instead of writing it to disk, and a *cloud repo* is a jj repo whose objects, operation log and op heads live on the workspace service. See the [glossary](../../GLOSSARY.md).
+A _cloud workspace_ is a jj workspace whose working copy the daemon serves on demand instead of
+writing it to disk, and a _cloud repo_ is a jj repo whose objects, per-user operation logs and trunk
+live on the workspace service. See the [glossary](../../GLOSSARY.md).
 
 ## Components
 
-- [jj-cli.md](jj-cli.md): `jjw` (Rust), a custom jj binary using jj-lib to use the daemon as the storage and working copy backend.
-- [daemon.md](daemon.md): `jjw-daemon` (Go), running on a developer or build machine, interfacing between the jj cli and the workspace service and providing a local cache. Serves the API the CLI calls.
-- [workspace-service.md](workspace-service.md): `jjw-workspace-service` (Go), the remote workspace service for source storage and serving. Serves the API the daemon calls.
+- [jj-cli.md](jj-cli.md): `jjw` (Rust), a custom jj binary using jj-lib to use the daemon as the
+  storage and working copy backend.
+- [daemon.md](daemon.md): `jjw-daemon` (Go), running on a developer or build machine, interfacing
+  between the jj cli and the workspace service and providing a local cache. Serves the API the CLI
+  calls.
+- [workspace-service.md](workspace-service.md): `jjw-workspace-service` (Go), the remote workspace
+  service for source storage and serving. Serves the API the daemon calls.
 
-All three binaries share one project version, `workspace.package.version` in the root `Cargo.toml`, and report it with `--version`.
+All three binaries share one project version, `workspace.package.version` in the root `Cargo.toml`,
+and report it with `--version`.
 
 ## Overview
 
@@ -20,51 +29,148 @@ jj-cli ──gRPC/UDS──▶ daemon ──gRPC/HTTP2──▶ workspace-servic
                        └── FUSE mount (one per workspace)
 ```
 
-- **workspace-service** is the only source of truth for shared data: objects, operation log, op heads.
-- **daemon** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace overlay of local edits and the working-copy state.
-- **jj-cli** is stateless apart from workspace config. It implements jj-lib's store and working copy traits as thin RPC shims to the daemon.
+- **workspace-service** is the only source of truth for shared data: objects, each user's operation
+  log and op heads, and trunk.
+- **daemon** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace
+  overlay of local edits and the working-copy state.
+- **jj-cli** is stateless apart from workspace config. It implements jj-lib's store and working copy
+  traits as thin RPC shims to the daemon.
 
-jj semantics (conflict materialization, ignore rules, change IDs, merging concurrent operations) stay in the CLI, where jj-lib is available. The daemon and the service (Go) only store bytes, Git trees and dirty paths, and never need to understand jj.
+jj semantics (conflict materialization, ignore rules, change IDs, merging concurrent operations)
+stay in the CLI, where jj-lib is available. The daemon and the service (Go) only store bytes, Git
+trees and dirty paths, and never need to understand jj.
 
 ## Interfaces
 
-- **jj-cli → daemon:** gRPC over a Unix socket, mirroring the jj-lib traits so the CLI stays a thin shim. See [daemon.md](daemon.md#api).
-- **daemon → workspace-service:** plaintext gRPC over HTTP/2 (no TLS or auth in v1), with coarse, batched calls; the daemon never asks for one object at a time if it can avoid it. See [workspace-service.md](workspace-service.md#api).
+- **jj-cli → daemon:** gRPC over a Unix socket, mirroring the jj-lib traits so the CLI stays a thin
+  shim. See [daemon.md](daemon.md#api).
+- **daemon → workspace-service:** plaintext gRPC over HTTP/2 (no TLS or auth in v1), with coarse,
+  batched calls; the daemon never asks for one object at a time if it can avoid it. See
+  [workspace-service.md](workspace-service.md#api).
 
 ## Repository model
 
-- **One shared op log and View per cloud repo**, for all users. Expected scale is under 50 active users, so the View is stored whole.
-- **Trunk** lives in the workspace service as an ordinary bookmark in the shared View. There is no Git host behind it, and in v1 anyone can move it.
-- **`jj undo` / `jj op restore`** keep stock jj semantics, even though they can revert or clobber other users' operations.
-- **History** is expected to stay under 100k commits, so every machine builds the full commit index locally from commits streamed in bulk from the service. There is no shallow history and no server-side index.
+- **Users** are identified by jj's `user.email`. The client asserts it and nothing verifies it,
+  because v1 has no authentication. Each repo directory records the email it was set up with, and
+  the CLI fails with a clear error if `user.email` no longer matches, so changing it never silently
+  switches op logs. An unset email is an error.
+- **One op log and View per user per cloud repo.** Op heads are keyed by `(repo, user)`. A user's
+  View holds only their own workspaces, bookmarks and visible commits, plus trunk. Users aren't
+  registered: a user the service hasn't seen has op heads `{root op}`, and their first publish
+  creates the entry.
+- **Unpushed work is private:** it is in no other user's View, and users share work only through
+  [trunk](#trunk-and-push). Objects still live in one store shared by all repos and users and are
+  readable by ID, which CI relies on; v1 has no ACLs.
+- **No merging between users.** Op logs are merged only between concurrent operations of the same
+  user (see [Concurrency](#publishing-and-consistency)). A View holds one user's state, so it stays
+  small and is stored whole.
+- **Bookmarks** belong to the user whose View holds them, by construction. The only gap is that
+  anyone can claim another user's email.
+- **`jj undo` / `jj op restore`** keep stock jj semantics and affect only the user's own op log
+  (R11).
+- **History** is expected to stay under 100k commits, so every machine builds the full commit index
+  locally from commits streamed in bulk from the service. There is no shallow history and no
+  server-side index.
 - **Sparse patterns** are not supported in v1. The working copy always contains every path.
+
+## Trunk and push
+
+- **Trunk** is one commit ID per cloud repo, held by the service. It starts at the root commit. It
+  is the only state users share, and it has no op log: it only moves forward, so its history is its
+  commit ancestry. The service also appends `(commit, user, time)` to a per-repo push log on every
+  push. Nothing reads the push log in v1; it's kept for audit and debugging because it can't be
+  recovered later.
+- **In the View** trunk is the untracked remote bookmark `main@origin`, with no local `main`
+  bookmark and no Git remote behind `origin`. Stock `immutable_heads()` covers `trunk()` and
+  untracked remote bookmarks, so jj also refuses to rewrite pushed commits locally. `main@origin`
+  changes only on push and fetch, so a user's op log changes only when they act.
+- **Push** (`jjw cws push`) moves trunk to a commit:
+  1. The CLI refuses commits with conflicts or empty descriptions, as `jj git push` does. These are
+     jj semantics, so the service doesn't check them.
+  2. The daemon waits until every object written before the call is on the service, using the same
+     barrier as publishing.
+  3. The service's `PushTrunk(repo, user, commit)` moves trunk atomically if the commit descends
+     from the current trunk, merges included. Pushing the current trunk commit again is a no-op, so
+     retries are safe. Anything else is rejected, and the user fetches, rebases and pushes again.
+     This fast-forward rule is the whole enforcement of trunk immutability (R12): nothing can move
+     trunk backwards or sideways.
+  4. The CLI publishes an operation that sets `main@origin` to the pushed commit.
+- **Fetch** (`jjw cws fetch`) reads trunk with `GetTrunk` and publishes one operation setting
+  `main@origin` to it, or nothing if it hasn't moved. It never rebases bookmarks or changes, as
+  `jj git fetch` doesn't.
+- **Undo:** undoing a push or fetch moves `main@origin` back in the user's View only. Trunk doesn't
+  move, and the next fetch restores `main@origin`. A push can't be undone.
+- **CI** reads trunk with `GetTrunk` and checks out its tree, with no op log.
 
 ## Object model
 
-- **IDs** are Git-compatible SHA-1 object IDs, content-addressed, so every object except op heads is immutable and freely cacheable. All hashing uses collision detection (sha1dc, as Git does).
-- **Objects:** commits, trees and blobs are valid Git objects (the CLI's encoding is in [jj-cli.md](jj-cli.md#object-encoding)). Operations and views are stored in the same object store.
-- **`tree_id`** is the Git object ID of a plain root tree. It is neither a commit ID nor a change ID: a jj commit points to its root tree, and many commits can share one. Change IDs live inside the commit object, so the daemon and the service never look at them. A jj tree with conflicts is a set of several tree IDs, so the working copy always serves one plain tree: the CLI materializes conflicts into it before calling `Checkout`.
-- **Writing:** the CLI serializes objects and the daemon hashes them and returns the ID, so there is one hashing implementation. The service re-hashes every upload and rejects any object whose ID doesn't match.
-- **Blob metadata:** Git trees don't record blob sizes. The service computes `(size, SHA-256)` for every blob on upload and stores it next to the Git ID; the daemon computes the same values for blobs it writes. This lets `stat` and `readdir` work without downloading blobs (R2).
+- **IDs** are Git-compatible SHA-1 object IDs, content-addressed, so every object except op heads is
+  immutable and freely cacheable. All hashing uses collision detection (sha1dc, as Git does).
+- **Objects:** commits, trees and blobs are valid Git objects (the CLI's encoding is in
+  [jj-cli.md](jj-cli.md#object-encoding)). Operations and views are stored in the same object store.
+- **`tree_id`** is the Git object ID of a plain root tree. It is neither a commit ID nor a change
+  ID: a jj commit points to its root tree, and many commits can share one. Change IDs live inside
+  the commit object, so the daemon and the service never look at them. A jj tree with conflicts is a
+  set of several tree IDs, so the working copy always serves one plain tree: the CLI materializes
+  conflicts into it before calling `Checkout`.
+- **Writing:** the CLI serializes objects and the daemon hashes them and returns the ID, so there is
+  one hashing implementation. The service re-hashes every upload and rejects any object whose ID
+  doesn't match.
+- **Blob metadata:** Git trees don't record blob sizes. The service computes `(size, SHA-256)` for
+  every blob on upload and stores it next to the Git ID; the daemon computes the same values for
+  blobs it writes. This lets `stat` and `readdir` work without downloading blobs (R2).
 
 ## Publishing and consistency
 
-- **Writing objects:** objects written by the CLI are stored in the daemon and uploaded in the background. Nobody else can see them until an operation that references them is published.
-- **Publishing:** jj has no separate "push". Every jj command that changes the repo ends by writing an operation and calling `UpdateOpHeads`, and that call makes the change visible and durable. It is synchronous: it returns only once the operation, every object it references and the new op heads are on the service. If any step fails, the command fails. Op heads never point to data the service doesn't have.
-- **Reading op heads:** every command reads op heads from the service, so reads are never stale.
-- **Crash safety:** if anything dies before a publish finishes, the command fails and nothing published is lost. Objects written but never published aren't referenced by anything. Working-copy edits are still in the daemon's persisted overlay, so rerunning the command recreates them (R6).
-- **Concurrency:** jj doesn't lock the repo across processes. Two commands that run at the same time (in two cloud workspaces, or on two machines) both start from the same op head and each publishes its own operation. Because `UpdateOpHeads(old, new)` removes `old` and adds `new`, the second writer doesn't fail; the repo just ends up with two op heads, and the next jj command merges them with stock jj-lib logic (R5). If both operations rewrote the same change, the user sees a divergent change and resolves it the normal way.
+- **Writing objects:** objects written by the CLI are stored in the daemon and uploaded in the
+  background. Nobody else can see them until an operation that references them is published.
+- **Publishing** is not [pushing](#trunk-and-push) and needs no separate command. Every jj command
+  that changes the repo ends by writing an operation and calling `UpdateOpHeads` on the user's op
+  heads, and that call makes the change visible to the user's other machines and durable. It is
+  synchronous: it returns only once the operation, every object it references and the new op heads
+  are on the service. If any step fails, the command fails. Op heads never point to data the service
+  doesn't have.
+- **Reading op heads:** every command reads the user's op heads from the service, so reads are never
+  stale. Trunk is read only by push and fetch.
+- **Crash safety:** if anything dies before a publish finishes, the command fails and nothing
+  published is lost. Objects written but never published aren't referenced by anything. Working-copy
+  edits are still in the daemon's persisted overlay, so rerunning the command recreates them (R6).
+- **Concurrency:** jj doesn't lock the repo across processes. Two commands by the same user that run
+  at the same time (in two cloud workspaces, or on two machines) both start from the same op head
+  and each publishes its own operation. Because `UpdateOpHeads(old, new)` removes `old` and adds
+  `new`, the second writer doesn't fail; the repo just ends up with two op heads, and the next jj
+  command merges them with stock jj-lib logic (R5). If both operations rewrote the same change, the
+  user sees a divergent change and resolves it the normal way. Different users never share op heads,
+  so their operations never need merging; they meet only on trunk, where concurrent pushes are
+  serialized by the fast-forward rule.
 
 ## Known limitations (v1)
 
-- **Network round trips per command.** A command after an edit takes about 4 round trips (`GetOpHeads`, fetch the new op and View, `PutObjects`, `UpdateOpHeads`), plus 2 more if it also changes the repo. This is fine on a low-latency network and noticeable over high-latency links such as a VPN. Commands that need the service fail when it is unreachable.
-- **Ignored files cost snapshot time.** The daemon reports every changed path and the CLI applies ignore rules, so snapshot time grows with the number of ignored files in the mount (roughly tens of ms per 100k paths). Large build trees should write outputs outside the mount (e.g. Bazel `--output_base`, `CARGO_TARGET_DIR`).
+- **Network round trips per command.** A command after an edit takes about 4 round trips
+  (`GetOpHeads`, fetch the new op and View, `PutObjects`, `UpdateOpHeads`), plus 2 more if it also
+  changes the repo. This is fine on a low-latency network and noticeable over high-latency links
+  such as a VPN. Commands that need the service fail when it is unreachable.
+- **Ignored files cost snapshot time.** The daemon reports every changed path and the CLI applies
+  ignore rules, so snapshot time grows with the number of ignored files in the mount (roughly tens
+  of ms per 100k paths). Large build trees should write outputs outside the mount (e.g. Bazel
+  `--output_base`, `CARGO_TARGET_DIR`).
 
 ## Future work
 
-- **Landing and trunk protection.** Options: a server-owned refs namespace moved only through a `Land` RPC and imported as a remote bookmark (`main@origin`), or the service decoding Views on `UpdateOpHeads` to enforce policy on protected bookmarks.
-- **Async publish and watched op heads**, if round-trip latency or network blips hurt (e.g. developers over VPN):
-  - Writes: `UpdateOpHeads` returns once the new operation is fsync'd locally, and a persisted queue publishes operations to the service in order. The service's remove-`old`, add-`new` semantics need no changes.
-  - Reads: the daemon keeps a `WatchOpHeads` stream open, prefetches new ops and Views, and serves `GetOpHeads` locally as the service heads plus unpublished local heads.
-  - Costs: unpublished operations become data that exists only on the daemon, other machines see changes only after publish, and the CLI should warn about operations that stay unpublished.
-- **Snapshot filtering hooks**, if ignored files make snapshots slow. Two generic hooks that know nothing about ignore rules: `ListDirty(ws, skip_prefixes[])`, and reporting a directory missing from the base tree as one entry (expanded on request). The CLI would compute the skip list from ignored directories with jj-lib, store it in its working-copy state, and drop entries when a `.gitignore` changes.
+- **Sharing unpushed work.** A fetch could import another user's bookmarks, read from their op
+  heads, as read-only remote bookmarks (e.g. `feature@alice`), so users can review or build on each
+  other's work without merging op logs.
+- **Async publish and watched op heads**, if round-trip latency or network blips hurt (e.g.
+  developers over VPN):
+  - Writes: `UpdateOpHeads` returns once the new operation is fsync'd locally, and a persisted queue
+    publishes operations to the service in order. The service's remove-`old`, add-`new` semantics
+    need no changes.
+  - Reads: the daemon keeps a `WatchOpHeads` stream open, prefetches new ops and Views, and serves
+    `GetOpHeads` locally as the service heads plus unpublished local heads.
+  - Costs: unpublished operations become data that exists only on the daemon, other machines see
+    changes only after publish, and the CLI should warn about operations that stay unpublished.
+- **Snapshot filtering hooks**, if ignored files make snapshots slow. Two generic hooks that know
+  nothing about ignore rules: `ListDirty(ws, skip_prefixes[])`, and reporting a directory missing
+  from the base tree as one entry (expanded on request). The CLI would compute the skip list from
+  ignored directories with jj-lib, store it in its working-copy state, and drop entries when a
+  `.gitignore` changes.

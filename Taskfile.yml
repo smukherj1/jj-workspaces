@@ -20,7 +20,7 @@ tasks:
       - cargo build -p jjw
 
   lint:
-    desc: Check protos, Go and Rust for lint and formatting
+    desc: Check protos, Go, Rust and Markdown for lint and formatting
     cmds:
       - buf lint
       - buf format --diff --exit-code
@@ -28,6 +28,12 @@ tasks:
       - go vet ./...
       - cargo fmt --check
       - cargo clippy --workspace --all-targets -- -D warnings
+      - git ls-files -z --cached --others --exclude-standard '*.md' | xargs -0 npx --yes prettier@3 --check
+
+  fmt:md:
+    desc: Format all tracked Markdown files with Prettier (wrapped at 100 columns)
+    cmds:
+      - git ls-files -z --cached --others --exclude-standard '*.md' | xargs -0 npx --yes prettier@3 --write
 
   test:
     desc: Run the Go and Rust unit tests

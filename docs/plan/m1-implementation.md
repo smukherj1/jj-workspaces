@@ -10,8 +10,8 @@ for the overall design.
 
 - `jjw-workspace-service` serves gRPC health and an empty `WorkspaceService`.
 - `jjw-daemon` serves `Daemon.GetStatus` and the empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`,
-  `Workspace` and `Prefetch` services on a Unix socket. `GetStatus` checks the service's health
-  with a bounded timeout.
+  `Workspace` and `Prefetch` services on a Unix socket. `GetStatus` checks the service's health with
+  a bounded timeout.
 - `jjw` is stock jj 0.46.0 plus a `cws` subcommand namespace. `jjw cws status` reports whether the
   daemon and the service are up. `jjw git init`, `jjw git clone` and `jjw debug init-simple` fail
   with a clear error.
@@ -79,12 +79,12 @@ Outcome: an empty build in both languages, proto generation, lint, and CI.
       directives so `go tool` runs them at a fixed version.
 - [x] Root `Cargo.toml` with `[workspace]` members `bin-rs/*` and `e2e`, `edition = "2024"`, and
       `workspace.package.version = "0.1.0"`. Add `rust-toolchain.toml` (`1.97.1`, with `rustfmt` and
-      `clippy`). `bin-rs/jjw` and `e2e` start as placeholder crates so the workspace builds; sections
-      3 and 4 fill them in.
-- [x] `buf.yaml` (v2): module `proto`, lint `STANDARD` except `SERVICE_SUFFIX`, so service names match
-      the spec (`Store`, `OpStore`, `Daemon`, ...). Breaking checks use `FILE`.
-- [x] `buf.gen.yaml`: local plugins through `go tool protoc-gen-go` and `go tool protoc-gen-go-grpc`,
-      output to `gen-go` with `paths=source_relative`.
+      `clippy`). `bin-rs/jjw` and `e2e` start as placeholder crates so the workspace builds;
+      sections 3 and 4 fill them in.
+- [x] `buf.yaml` (v2): module `proto`, lint `STANDARD` except `SERVICE_SUFFIX`, so service names
+      match the spec (`Store`, `OpStore`, `Daemon`, ...). Breaking checks use `FILE`.
+- [x] `buf.gen.yaml`: local plugins through `go tool protoc-gen-go` and
+      `go tool protoc-gen-go-grpc`, output to `gen-go` with `paths=source_relative`.
 - [x] `proto/jjcw/service/v1/workspace_service.proto`: `service WorkspaceService {}`.
 - [x] `proto/jjcw/daemon/v1/daemon.proto`: empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`,
       `Workspace` and `Prefetch` services, plus:
@@ -114,10 +114,11 @@ Outcome: an empty build in both languages, proto generation, lint, and CI.
               ```
 
 - [x] `Taskfile.yml` (schema `version: '3'`). `VERSION` is a dynamic variable read from
-      `workspace.package.version` in the root `Cargo.toml`. Each task has a `desc`, so
-      `task --list` documents them. Tasks:
+      `workspace.package.version` in the root `Cargo.toml`. Each task has a `desc`, so `task --list`
+      documents them. Tasks:
   - `proto`: `buf generate`.
-  - `build`: `go build -ldflags "-X .../lib-go/version.Version={{.VERSION}}" -o target/debug/ ./bin-go/...`
+  - `build`:
+    `go build -ldflags "-X .../lib-go/version.Version={{.VERSION}}" -o target/debug/ ./bin-go/...`
     and `cargo build -p jjw`.
   - `lint`: `buf lint`, `buf format --diff --exit-code`, `gofmt -l bin-go lib-go gen-go` (fails if
     output), `go vet ./...`, `cargo fmt --check`,
@@ -136,18 +137,18 @@ Done when `task build lint test` passes locally and in CI. Passes locally; CI ha
 
 ## 1. Service
 
-Outcome: `jjw-workspace-service` starts, serves health and an empty `WorkspaceService`, and shuts down
-cleanly.
+Outcome: `jjw-workspace-service` starts, serves health and an empty `WorkspaceService`, and shuts
+down cleanly.
 
 - [x] `lib-go/service`: `NewServer() *Server` registers `WorkspaceService` (embedding
       `UnimplementedWorkspaceServiceServer`), `grpc.health.v1` with status `SERVING` for `""` and
       `jjcw.service.v1.WorkspaceService`, and server reflection. `Server` wraps the `*grpc.Server`
       and the health server, so `Serve(lis)` and `Shutdown(timeout)` (`NOT_SERVING`, bounded
       `GracefulStop`, then `Stop`) live in the library.
-- [x] `bin-go/jjw-workspace-service`: flag `--listen` (default `localhost:7470`; port `0` picks a free
-      port). After the listener binds, print `listening on <host:port>` to stdout with the resolved
-      port. The harness relies on this line. On SIGINT or SIGTERM, set health to `NOT_SERVING`,
-      `GracefulStop` with a 5 s bound, then `Stop`.
+- [x] `bin-go/jjw-workspace-service`: flag `--listen` (default `localhost:7470`; port `0` picks a
+      free port). After the listener binds, print `listening on <host:port>` to stdout with the
+      resolved port. The harness relies on this line. On SIGINT or SIGTERM, set health to
+      `NOT_SERVING`, `GracefulStop` with a 5 s bound, then `Stop`.
 - [x] `--version` prints `jjw-workspace-service <version>`.
 
 Tests (`go test`):
@@ -166,8 +167,8 @@ Outcome: `jjw-daemon` serves its API on a Unix socket and reports the service's 
 bounded timeout.
 
 - [x] `bin-go/jjw-daemon` flags:
-  - `--socket` (default `$XDG_RUNTIME_DIR/jjw/daemon.sock`). If `XDG_RUNTIME_DIR` is unset and there is
-    no flag, exit with an error that names `--socket`.
+  - `--socket` (default `$XDG_RUNTIME_DIR/jjw/daemon.sock`). If `XDG_RUNTIME_DIR` is unset and there
+    is no flag, exit with an error that names `--socket`.
   - `--service-addr` (required).
   - `--service-timeout` (default `10s`). It bounds every call to the service.
   - `--version` prints `jjw-daemon <version>`.
@@ -181,12 +182,13 @@ bounded timeout.
     unlinks the socket.
 - [x] `lib-go/daemon/serviceclient`: `grpc.NewClient(addr, insecure credentials)`, created once at
       startup. The daemon starts even if the service is down, because cache hits must work offline.
-      `Health(ctx)` calls `grpc.health.v1.Health/Check` for `""` with a `--service-timeout` deadline.
+      `Health(ctx)` calls `grpc.health.v1.Health/Check` for `""` with a `--service-timeout`
+      deadline.
 - [x] `lib-go/daemon` servers:
   - `grpc.health.v1` for the daemon itself (`SERVING`).
   - Register the empty `Store`, `OpStore`, `OpHeads`, `WorkingCopy`, `Workspace` and `Prefetch`
-    services. `protoc-gen-go-grpc` emits registration code for services without methods, so all
-    six are registered.
+    services. `protoc-gen-go-grpc` emits registration code for services without methods, so all six
+    are registered.
   - Server reflection, so `grpcurl` can call the daemon over its socket.
   - `Daemon.GetStatus` returns `version.Version` and `--service-addr`, and maps `Health` to a
     `ServiceStatusCode`: `SERVING` to `OK`; `NOT_SERVING` or any other health status to `UNHEALTHY`,
@@ -220,8 +222,9 @@ Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to
       protox, generate client code only with `tonic-prost-build` (`compile_fds`,
       `build_server(false)`), and set `JJ_LIB_VERSION` from `Cargo.lock`.
 - [x] `main.rs`: `CliRunner::init().version("<our version> (jj <JJ_LIB_VERSION>)")`, then
-      `.add_dispatch_hook(block_repo_creation)` and `.add_subcommand(run_cws_command)`. `.name("jjw")`
-      is also needed, or clap prints `jj`. `jjw --version` prints `jjw 0.1.0 (jj 0.46.0)`.
+      `.add_dispatch_hook(block_repo_creation)` and `.add_subcommand(run_cws_command)`.
+      `.name("jjw")` is also needed, or clap prints `jj`. `jjw --version` prints
+      `jjw 0.1.0 (jj 0.46.0)`.
 - [x] `daemon_client.rs`: `DaemonClient::connect(settings)`.
   - The socket path comes from jj config `cws.daemon-socket`, falling back to
     `$XDG_RUNTIME_DIR/jjw/daemon.sock`. If neither is available, error and point to the config key.
@@ -245,9 +248,8 @@ Outcome: `jjw` behaves as stock jj 0.46.0, adds `jjw cws status`, and refuses to
               (exit 1).
 
 - [x] `block_repo_creation.rs`: the dispatch hook checks `command_helper.matches()`. For `git init`,
-      `git clone` or `debug init-simple`, it returns user error
-      `jjw can't create repositories yet` before anything touches disk. Otherwise it calls the inner
-      dispatch.
+      `git clone` or `debug init-simple`, it returns user error `jjw can't create repositories yet`
+      before anything touches disk. Otherwise it calls the inner dispatch.
 
 Tests (`cargo test -p jjw`):
 

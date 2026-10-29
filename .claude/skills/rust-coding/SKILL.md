@@ -1,6 +1,8 @@
 ---
 name: rust-coding
-description: Rust conventions for this repo. Use when writing, adding or moving Rust code or modules (`*.rs`, `Cargo.toml`).
+description:
+  Rust conventions for this repo. Use when writing, adding or moving Rust code or modules (`*.rs`,
+  `Cargo.toml`).
 ---
 
 # Rust conventions

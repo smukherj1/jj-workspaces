@@ -7,9 +7,9 @@ argument-hint: <feature description, or a pointer to it, e.g. a roadmap mileston
 
 # Create an implementation plan
 
-Write `docs/plan/<feature>-implementation.md` for the feature in `$ARGUMENTS`, following the layout of the existing
-plans there. Read whatever `$ARGUMENTS` points to, then the component docs `DESIGN.md` links for each
-component the feature touches.
+Write `docs/plan/<feature>-implementation.md` for the feature in `$ARGUMENTS`, following the layout
+of the existing plans there. Read whatever `$ARGUMENTS` points to, then the component docs
+`DESIGN.md` links for each component the feature touches.
 
 ## Sub-milestones
 
@@ -19,8 +19,8 @@ tests passing.
 
 Write each sub-milestone tersely, with:
 
-- **APIs:** each new or changed public API, per component, with its behavior if new or the change
-  if changed.
+- **APIs:** each new or changed public API, per component, with its behavior if new or the change if
+  changed.
 - **Tests:** the cases, each tagged unit, integration or e2e, picked by the rules below.
 
 The last sub-milestone updates `docs/spec`: list each spec doc the feature changes and what changes
