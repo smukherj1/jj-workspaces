@@ -10,8 +10,8 @@ that read and rewrite history work through the stack, with no files checked out.
 ## Outcome
 
 - `jjw cws repo create <name> [path]` creates a cloud repo on the service and sets up its repo
-  directory at `path` for the user in `user.email`, with a `default` workspace whose `@` is on
-  `root()`. Later commands there fail clearly if `user.email` changes.
+  directory at `path` (default `./<name>`) for the user in `user.email`, with a `default` workspace
+  whose `@` is on `root()`. Later commands there fail clearly if `user.email` changes.
 - In that directory, `jj new`, `describe`, `rebase`, `log`, `op log` and `undo` work with
   `--ignore-working-copy`. Commands that would snapshot or check out fail with a clear error.
 - Two mutating commands run with the same `--at-op` publish sibling op heads, and the next command
@@ -141,10 +141,11 @@ cleanup of objects left by failed publishes (M7).
 
 ### CLI
 
-- **Repo directory in M2** is the `path` given to `jjw cws repo create`. Its `.jj/repo` has `store`
-  (`cws`), `workspace_store` (stock `simple`), `op_store` and `op_heads` (`cws`, each holding a
-  `repo_name` file), `index` (`cws`) and `submodule_store` (stock). `op_heads` also holds a
-  `user_email` file.
+- **Repo directory in M2** is the `path` given to `jjw cws repo create`, `./<name>` by default as
+  `jj git clone` names its destination. With no workspaces yet, it's where the user runs `jj`, so it
+  isn't in a daemon-managed location; M4 moves it there. Its `.jj/repo` has `store` (`cws`),
+  `workspace_store` (stock `simple`), `op_store` and `op_heads` (`cws`, each holding a `repo_name`
+  file), `index` (`cws`) and `submodule_store` (stock). `op_heads` also holds a `user_email` file.
 - **User check:** the `cws` op-heads store loader compares `user_email` with `user.email` from the
   settings it's given. A mismatch fails with
   `this repo directory belongs to <old>; user.email is <new>` and the hint
@@ -422,7 +423,8 @@ Outcome: `jjw cws repo create` makes a working cloud repo, and jj history comman
     `collect_unindexed_commit_ids(index_dir, op)` is a separate function.
 - [ ] `working_copy.rs`: the `cws-none` working copy and factory.
 - [ ] `default_config.rs`: the default config layer.
-- [ ] `commands/cws/repo.rs`: `jjw cws repo create <name> [path]`:
+- [ ] `commands/cws/repo.rs`: `jjw cws repo create <name> [path]`, with `path` defaulting to
+      `./<name>`:
   1. Fails with `<path> already has a .jj directory`, or with the unset `user.email` error, before
      calling the daemon.
   2. Calls `Workspace.CreateRepo(name)`. `AlreadyExists` becomes
@@ -447,9 +449,9 @@ Tests:
       abandon and rewrite commits. It includes the abandoned commit and the rewritten predecessor,
       and stops at an op that has an `op_links` marker.
 - [ ] Unit: the mapping from gRPC errors to jj-lib errors.
-- [ ] E2E (`e2e/tests/repo.rs`): `repo_lifecycle`. `repo create`, then `jj new`, `describe`, another
-      `new`, `rebase`, `log` (snapshot of the default revset and `trunk()`), `op log` and `undo`,
-      all with `--ignore-working-copy`.
+- [ ] E2E (`e2e/tests/repo.rs`): `repo_lifecycle`. `repo create` with no `path` (the repo directory
+      is `./<name>`), then `jj new`, `describe`, another `new`, `rebase`, `log` (snapshot of the
+      default revset and `trunk()`), `op log` and `undo`, all with `--ignore-working-copy`.
 - [ ] E2E: `concurrent_at_op`. Two `describe`s with the same `--at-op` publish two op heads, and the
       next `jj log` reports the concurrent operations, merges them, and shows both changes.
 - [ ] Integration (`e2e/tests/repo_errors.rs`, using the harness):

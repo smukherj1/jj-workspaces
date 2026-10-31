@@ -81,13 +81,14 @@ it to trunk, which only moves forward. There is still no working copy.
 2. **Daemon:** forwards trunk reads, and forwards a push only once every object written before it is
    on the service.
 3. **CLI:** a command sets up a repo directory for an existing cloud repo, with no working copy, for
-   a new user or for an existing user on another machine. `jjw cws fetch` brings trunk into the
-   user's View as `main@origin`, and `jjw cws push` moves trunk to a commit, refusing conflicted
-   commits and empty descriptions. User A creates a repo and pushes a commit. User B sets up the
-   repo, fetches and sees it, but none of A's unpushed work or operations. B's push from a stale
-   trunk is rejected, and succeeds after a fetch and rebase. B's `jj undo` never changes A's
-   history, and undoing a push doesn't move trunk. A second repo directory for A shows A's history,
-   and concurrent operations from A's two directories merge on the next command.
+   a new user or for an existing user on another machine. M4 turns it into workspace creation.
+   `jjw cws fetch` brings trunk into the user's View as `main@origin`, and `jjw cws push` moves
+   trunk to a commit, refusing conflicted commits and empty descriptions. User A creates a repo and
+   pushes a commit. User B sets up the repo, fetches and sees it, but none of A's unpushed work or
+   operations. B's push from a stale trunk is rejected, and succeeds after a fetch and rebase. B's
+   `jj undo` never changes A's history, and undoing a push doesn't move trunk. A second repo
+   directory for A shows A's history, and concurrent operations from A's two directories merge on
+   the next command.
 
 ### M4: Workspaces with lazy, read-only checkout
 
@@ -100,18 +101,14 @@ fetched only when read. The mount is read-only.
    downloads, and fetches file contents on first read, then serves them from the cache. Checking out
    a tree costs O(diff between trees). Inodes are stable, and mtimes change only for paths whose
    content changed.
-3. **CLI:** a workspace creation command, plus a registered working copy factory with checkout and
-   state, including conflict materialization and stale working copy detection. On a fresh machine, a
-   user creates a workspace for an existing cloud repo and moves between revisions with `jj new` and
-   `jj edit`. The same user's second machine sees the same history, and that user's concurrent
-   operations from two machines merge on the next command. A first benchmark measures checkout time
-   and cached read latency (R1, R4).
-
-Open questions:
-
-- **Workspace creation command** (before sub-milestone 3). The command name and flags for creating a
-  workspace through `Workspace.Create`, including the first workspace on a machine, where no repo
-  directory exists yet, and how it relates to M3's repo directory setup command.
+3. **CLI:** M3's command for setting up an existing repo, and `jjw cws repo create`, now create a
+   cloud workspace at the given path through `Workspace.Create`, so there is no separate workspace
+   creation command. The repo directory moves to the daemon's location. A registered working copy
+   factory handles checkout and state, including conflict materialization and stale working copy
+   detection. On a fresh machine, a user creates a workspace for an existing cloud repo and moves
+   between revisions with `jj new` and `jj edit`. The same user's second machine sees the same
+   history, and that user's concurrent operations from two machines merge on the next command. A
+   first benchmark measures checkout time and cached read latency (R1, R4).
 
 ### M5: Local edits and snapshots
 
