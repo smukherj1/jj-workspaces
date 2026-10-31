@@ -28,11 +28,14 @@ the commit encoding below, are checked against each new version before upgrading
 - If the daemon can't be reached, commands fail with `can't reach jjw-daemon at <socket>: <cause>`
   and a hint to start it.
 
-## User identity
+## User and workspace identity
 
-- The user is jj's `user.email`. Every `OpHeads` call and every push sends it, so it selects whose
-  op log a command reads and publishes to. See [DESIGN.md](DESIGN.md#repository-model).
-- The repo directory records the email it was set up with. A command that loads the repo fails with
+- The user is jj's `user.email`. Every `OpHeads` call and every push sends it with the workspace
+  name, and together they select the op log a command reads and publishes to. See
+  [DESIGN.md](DESIGN.md#repository-model).
+- The repo directory records the email and the workspace name it was set up for. The workspace name
+  is also the jj workspace name in the View, so `jj log` shows `<name>@`.
+- If `user.email` no longer matches, a command that loads the repo fails with
   `this repo directory belongs to <old>; user.email is <new>` and a hint to set `user.email` back,
   for example only for this repo with `jj config set --repo`. An unset `user.email` fails with a
   hint to set it.
@@ -50,6 +53,21 @@ the commit encoding below, are checked against each new version before upgrading
   details in parentheses. The command exits 0 only when the service is serving, and otherwise fails
   with `workspace service is <status>` after printing both lines.
 
+- **`jjw cws repo create <repo>`** creates the repo on the service and nothing else. It fails with
+  `repo <repo> already exists on the workspace service`, or with the repo name rule.
+- **`jjw cws workspace create <repo> <name> [path]`** (`path` defaults to `./<name>`) creates a
+  cloud workspace for `user.email` through `Workspace.Create`, and publishes its first operation:
+  `main@origin` at the current trunk and `@` a new empty commit on it. It fails if the user already
+  has a workspace with that name in the repo, or if `path` already has a `.jj` directory.
+- **`jjw cws workspace open <repo> <name> [path]`** (M4) opens an existing workspace on this
+  machine. If another machine holds it, it takes the hold and warns that edits never snapshotted
+  there stay on that machine.
+- **`jjw cws workspace list <repo>`** and **`jjw cws workspace delete <repo> <name>`** list and
+  delete the user's workspaces.
+- **Stock `jj workspace add`, `forget` and `rename`** fail in cloud repos with an error pointing to
+  `jjw cws workspace create` and `delete`. A View holds one workspace, and renaming would break its
+  link to the registry. `jj workspace list`, `root` and `update-stale` work as in stock jj.
+
 - **`jjw cws fetch`** calls `Trunk.GetTrunk`. If trunk differs from `main@origin` in the View, it
   publishes one operation that sets the untracked remote bookmark `main@origin` to it and adds it as
   a head. Otherwise it publishes nothing. It never rebases anything.
@@ -63,13 +81,14 @@ the commit encoding below, are checked against each new version before upgrading
      the push has still happened, and running it again or fetching records it. Pushing the current
      trunk commit again succeeds without changing trunk.
 
-  `jj undo` of a push only moves `main@origin` back in the user's View. Trunk stays where it is.
+  `jj undo` of a push only moves `main@origin` back in the workspace's View. Trunk stays where it
+  is.
 
 ## Store backends
 
 - **`Backend`** → daemon `Store`. Objects are serialized with gix-object and sent as raw bytes.
 - **`OpStore`** → daemon `OpStore`.
-- **`OpHeadsStore`** → daemon `OpHeads`, for the repo directory's user.
+- **`OpHeadsStore`** → daemon `OpHeads`, for the repo directory's user and workspace.
 
 ### Object encoding
 
@@ -83,9 +102,10 @@ the commit encoding below, are checked against each new version before upgrading
 
 ## Commit index
 
-- The index lives in the machine's repo directory that the daemon sets up (see
-  [daemon.md](daemon.md#workspace)). All cloud workspaces of a cloud repo on the machine share it,
-  so the index is built once per machine.
+- The index lives in the workspace's repo directory that the daemon sets up (see
+  [daemon.md](daemon.md#workspace)). Each workspace has its own, built in full when the workspace is
+  created and updated incrementally after that. Nothing in it is shared with other workspaces, so
+  nothing needs coordinating.
 - Before building or updating the index, the CLI calls `Store.FetchCommitGraph(view heads)`.
   jj-lib's stock index builder then runs against the daemon's cache with no per-commit network round
   trips.
@@ -132,9 +152,9 @@ log, View or index, so CI cold start doesn't depend on the index. CI never publi
 
 - `trunk()` is `latest(present(main@origin) | root())`. Cloud repos have no Git remotes, so the
   stock alias would find nothing.
-- The default `jj log` revset and `immutable_heads()` stay stock. A View holds only the user's own
-  commits and trunk, so the stock log doesn't show other users' work, and pushed commits are
-  immutable.
+- The default `jj log` revset and `immutable_heads()` stay stock. A View holds only the workspace's
+  own commits and trunk, so the stock log doesn't show other workspaces' work, and pushed commits
+  are immutable.
 
 ## Future work
 

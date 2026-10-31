@@ -35,10 +35,10 @@ shim. The services are declared up front; each RPC is added in the milestone tha
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | `Store`       | `Read/Write{Commit,Tree,File,Symlink}`, `GetCopyRecords`, `FetchCommitGraph(heads[])`                                                                                                                   | `Backend`, index build              |
 | `OpStore`     | `Read/Write{Operation,View}`, `ResolveOpIdPrefix`                                                                                                                                                       | `OpStore`                           |
-| `OpHeads`     | `GetOpHeads(repo, user)`, `UpdateOpHeads(repo, user, old[], new)`                                                                                                                                       | `OpHeadsStore`                      |
-| `Trunk`       | `GetTrunk(repo)`, `PushTrunk(repo, user, commit)`                                                                                                                                                       | `jjw cws fetch` / `push`, CI        |
+| `OpHeads`     | `GetOpHeads(repo, user, ws)`, `UpdateOpHeads(repo, user, ws, old[], new)`                                                                                                                               | `OpHeadsStore`                      |
+| `Trunk`       | `GetTrunk(repo)`, `PushTrunk(repo, user, ws, commit)`                                                                                                                                                   | `jjw cws fetch` / `push`, CI        |
 | `WorkingCopy` | `Checkout(ws, tree_id)`, `ListDirty(ws) → paths[]`, `Snapshot(ws, paths[]) → entries[]`, `Finish(ws, op_id, entries[], tree_id, state)`, `Reset(ws, tree_id, state)`, `GetState(ws)`, `Lock/Unlock(ws)` | `WorkingCopy` / `LockedWorkingCopy` |
-| `Workspace`   | `Create(repo, ws, mount_path)`, `Delete(ws)`, `List`                                                                                                                                                    | workspace lifecycle                 |
+| `Workspace`   | `CreateRepo(repo)`, `Create(repo, user, ws, path)`, `Open(repo, user, ws, path)`, `Delete(repo, user, ws)`, `List(repo, user)`                                                                          | workspace lifecycle                 |
 | `Prefetch`    | `Prefetch(ws, paths[] \| tree_id)`                                                                                                                                                                      | build hint (R8)                     |
 | `Daemon`      | `GetStatus`                                                                                                                                                                                             | diagnostics                         |
 
@@ -64,18 +64,20 @@ shim. The services are declared up front; each RPC is added in the milestone tha
 
 ### OpHeads
 
-Every call names the user whose op heads it reads or changes, and the daemon passes it through. The
-daemon doesn't track users.
+Every call names the repo, user and workspace whose op heads it reads or changes, and the daemon
+passes them through. The daemon doesn't track users. From M4, it adds the holder token it got from
+`Workspace.Open` or `Workspace.Create` to `UpdateOpHeads`.
 
 - **`GetOpHeads`** is forwarded to the service on every call; op heads are never cached.
 - **`UpdateOpHeads(old, new)`** waits until every object reachable from the new operation is on the
   service, calls the service's `UpdateOpHeads`, and only then returns. If any step fails, it returns
-  an error.
+  an error. A rejection because another machine now holds the workspace passes through to the CLI,
+  which fails with `workspace <name> is open on <host>`.
 
 ### Trunk
 
 - **`GetTrunk(repo)`** is forwarded to the service on every call; trunk is never cached.
-- **`PushTrunk(repo, user, commit)`** waits until every object written before the call is on the
+- **`PushTrunk(repo, user, ws, commit)`** waits until every object written before the call is on the
   service, using the same barrier as `UpdateOpHeads`, then calls the service's `PushTrunk` and
   returns only once trunk has moved. A rejection because the commit doesn't descend from trunk
   passes through to the CLI.
@@ -109,12 +111,21 @@ opaque state blob, the dirty set and per-path write generations. All of it is up
 
 ### Workspace
 
-- **`Create(repo, ws, mount_path)`**: on first use of a cloud repo on the machine, sets up its repo
-  directory (e.g. `~/.cache/jj-cloud-workspaces/<repo>/`) holding `.jj/repo`, the commit index and
-  repo config, shared by all cloud workspaces of that repo. It then mounts the cloud workspace and
-  synthesizes its `.jj` in the mount to point to the repo directory, the way a secondary jj
-  workspace points to its repo. No local clone is made. Per-workspace working-copy state is held by
-  the daemon, not in `.jj`.
+- **`CreateRepo(repo)`** is forwarded to the service.
+- **`Create(repo, user, ws, path)`** registers the workspace on the service with `CreateWorkspace`.
+  From M4 it also takes the hold, sets up the workspace's own repo directory (e.g.
+  `~/.cache/jj-cloud-workspaces/<repo>/<user>/<ws>/`) holding `.jj/repo`, the commit index and repo
+  config, and mounts the cloud workspace at `path`, synthesizing its `.jj` in the mount to point to
+  the repo directory, the way a secondary jj workspace points to its repo. Until then, the CLI sets
+  up the repo directory at `path` itself. No local clone is made. Per-workspace working-copy state
+  is held by the daemon, not in `.jj`.
+- **`Open(repo, user, ws, path)`** (M4) does the same for an existing workspace: it takes the hold
+  with `OpenWorkspace`, sets up the repo directory if this machine doesn't have it, and mounts the
+  workspace. The previous holder's overlay stays in that machine's daemon.
+- **`Delete(repo, user, ws)`** deletes the workspace on the service. From M4 it also unmounts it if
+  it's mounted here, and removes its repo directory and working-copy state.
+- **`List(repo, user)`** returns the user's workspaces in the repo from the service, with each one's
+  holder.
 
 ## Local storage
 
@@ -150,7 +161,8 @@ The daemon keeps two stores, shared by all cloud workspaces on the machine:
 
 - When the daemon exits, its FUSE mounts go with it. Open files, shells whose current directory is
   inside a mount, and running builds fail, but no edits are lost (R6).
-- systemd restarts the daemon, which remounts every cloud workspace from the primary store.
+- systemd restarts the daemon, which remounts every cloud workspace it still holds from the primary
+  store.
 - Upgrades are scheduled to keep this to about one failure a day at most: build machines are drained
   and upgraded one at a time, and developer machines upgrade overnight.
 
@@ -166,5 +178,5 @@ The daemon keeps two stores, shared by all cloud workspaces on the machine:
     requests with `FUSE_NOTIFY_RESEND` (Linux 6.9+).
 - **Periodic auto-snapshots**, if edits should reach the service without the user running a jj
   command. The daemon would run the CLI's snapshot when a workspace is dirty, like jj's watchman
-  `register-snapshot-trigger`. Cost: many more operations in the user's op log and more frequent
-  op-head merges between the user's machines.
+  `register-snapshot-trigger`. Cost: many more operations in the workspace's op log, and more
+  op-head merges with commands the user runs at the same time.

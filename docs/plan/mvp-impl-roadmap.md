@@ -52,43 +52,49 @@ See [m1-implementation.md](m1-implementation.md) for detailed implementation pla
 jj commands that read and rewrite history work through the stack, with no files checked out.
 
 1. **Service:** creates an empty repo, stores verified objects with blob metadata, serves batch and
-   streaming object fetch and upload, streams the commit graph, and keeps op heads per user with
-   atomic updates. A user the service hasn't seen starts at the root operation, and users never see
-   each other's op heads.
-2. **Daemon:** `Store`, `OpStore` and `OpHeads` work, with op heads named by user. Written objects
+   streaming object fetch and upload, and streams the commit graph. It keeps a registry of
+   workspaces, named per user and repo, and op heads per workspace with atomic updates. A new
+   workspace starts at the root operation, op heads of an unknown workspace are `NotFound`, and
+   workspaces never see each other's op heads.
+2. **Daemon:** `Store`, `OpStore` and `OpHeads` work, with op heads named by repo, user and
+   workspace, and workspace creation is forwarded. Written objects
    are hashed, persisted and uploaded in the background. Reads come from local storage, with a fetch
    on a miss. The commit graph is fetched in bulk. An operation is published only once every object
    it references is on the service.
 3. **CLI:** `jjw` registers its `cws` store factories: backend, op store and op heads shims using
    the pinned jj version's commit encoding. Stock repo creation (`git init`, `git clone`,
    `debug init-simple`) stays blocked. The commit index is built from the bulk-fetched commit graph.
-   The default `trunk()` alias is in place. The user is jj's `user.email`. A command creates a repo
-   on the service and sets up its repo directory for that user in an ordinary directory, with no
-   working copy, and later commands there fail clearly if `user.email` changes. There, `jj new`,
-   `describe`, `rebase`, `log`, `op log` and `undo` work with `--ignore-working-copy`. Concurrent
-   operations, run on one machine with the same `--at-op`, merge on the next command.
+   The default `trunk()` alias is in place. The user is jj's `user.email`. `jjw cws repo create`
+   creates a repo on the service, and `jjw cws workspace create` registers a named workspace for the
+   user and sets up its repo directory in an ordinary directory, with no working copy and `@` on the
+   root commit. `jjw cws workspace list` and `delete` manage the user's workspaces on the service.
+   Later commands there fail clearly if `user.email` changes. There, `jj new`,
+   `describe`, `rebase`, `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock
+   `jj workspace add`, `forget` and `rename` fail. Concurrent operations, run with the same
+   `--at-op`, merge on the next command. A second workspace of the same user starts from the root
+   commit and sees none of the first workspace's operations or commits.
 
 See [m2-implementation.md](m2-implementation.md) for detailed implementation plan.
 
 ### M3: Trunk and push
 
-Several users work in one cloud repo, each with a private op log, and share finished work by pushing
-it to trunk, which only moves forward. There is still no working copy.
+Several users work in one cloud repo, each in workspaces with private op logs, and share finished
+work by pushing it to trunk, which only moves forward. There is still no working copy.
 
 1. **Service:** keeps one trunk per repo, starting at the root commit. Trunk is read in one call and
    moves only by a push of a commit that descends from it, so concurrent pushes from the same trunk
    can't both succeed. Every push is appended to a push log.
 2. **Daemon:** forwards trunk reads, and forwards a push only once every object written before it is
    on the service.
-3. **CLI:** a command sets up a repo directory for an existing cloud repo, with no working copy, for
-   a new user or for an existing user on another machine. M4 turns it into workspace creation.
-   `jjw cws fetch` brings trunk into the user's View as `main@origin`, and `jjw cws push` moves
+3. **CLI:** `jjw cws workspace create` starts a new workspace's `@` on the current trunk.
+   `jjw cws fetch` brings trunk into the workspace's View as `main@origin`, and `jjw cws push` moves
    trunk to a commit, refusing conflicted commits and empty descriptions. User A creates a repo and
-   pushes a commit. User B sets up the repo, fetches and sees it, but none of A's unpushed work or
-   operations. B's push from a stale trunk is rejected, and succeeds after a fetch and rebase. B's
-   `jj undo` never changes A's history, and undoing a push doesn't move trunk. A second repo
-   directory for A shows A's history, and concurrent operations from A's two directories merge on
-   the next command.
+   a workspace and pushes a commit. User B creates a workspace in the repo, starts on that commit,
+   and sees none of A's unpushed work or operations. B's push from a stale trunk is rejected, and
+   succeeds after a fetch and rebase. B's `jj undo` never changes A's history, and undoing a push
+   doesn't move trunk. A's second workspace sees A's pushed work but not A's unpushed work, and
+   `jj undo` in one of A's workspaces never changes the other. Two jj processes in one workspace
+   publish concurrent operations that merge on the next command.
 
 ### M4: Workspaces with lazy, read-only checkout
 
@@ -96,19 +102,30 @@ Creating a workspace and switching revisions take seconds regardless of repo siz
 fetched only when read. The mount is read-only.
 
 1. **Service:** serves subtrees with each blob's size and digest, without the blobs.
-2. **Daemon:** creates, lists and deletes workspaces, setting up the machine's repo directory on
-   first use. It mounts each workspace with FUSE, serves `stat` and `readdir` without blob
+2. **Daemon:** creates, opens, lists and deletes workspaces, setting up each workspace's repo
+   directory, and takes the workspace's hold on the service when it creates or opens one. It mounts
+   each workspace with FUSE, serves `stat` and `readdir` without blob
    downloads, and fetches file contents on first read, then serves them from the cache. Checking out
    a tree costs O(diff between trees). Inodes are stable, and mtimes change only for paths whose
    content changed.
-3. **CLI:** M3's command for setting up an existing repo, and `jjw cws repo create`, now create a
-   cloud workspace at the given path through `Workspace.Create`, so there is no separate workspace
-   creation command. The repo directory moves to the daemon's location. A registered working copy
-   factory handles checkout and state, including conflict materialization and stale working copy
-   detection. On a fresh machine, a user creates a workspace for an existing cloud repo and moves
-   between revisions with `jj new` and `jj edit`. The same user's second machine sees the same
-   history, and that user's concurrent operations from two machines merge on the next command. A
-   first benchmark measures checkout time and cached read latency (R1, R4).
+3. **CLI:** `jjw cws workspace create` now mounts the cloud workspace at the given path, and
+   `jjw cws workspace open` opens an existing workspace on another machine. The repo directory moves
+   to the daemon's location. A registered working copy factory handles checkout and state,
+   including conflict materialization and stale working copy detection. On a fresh machine, a user
+   creates a workspace for an existing cloud repo and moves between revisions with `jj new` and
+   `jj edit`. The user opens the workspace on a second machine and sees its history there, and the
+   first machine's next command fails with `workspace <name> is open on <host>`. A first benchmark
+   measures workspace creation, checkout time and cached read latency (R1, R4).
+
+Open questions:
+
+- **Cold workspace creation at 100k commits** (before sub-milestone 3). Each workspace builds its
+  full commit index when it's created, and jj-lib reads every commit through `Backend::read_commit`,
+  one daemon RPC each. Measure creation against R1. Mitigations, in order: raise the backend's
+  `concurrency()` so reads pipeline; have `FetchCommitGraph` return the commits to the CLI so the
+  build reads them from memory; seed the new workspace's index by hard-linking segments from another
+  of the same user's workspaces of the repo on the machine, which makes that workspace's private
+  commit IDs resolvable in the new one.
 
 ### M5: Local edits and snapshots
 
@@ -150,8 +167,8 @@ Open questions:
 - **Kernel versions on target machines** (before sub-milestone 3). FUSE passthrough for materialized
   files needs Linux 6.9+. Confirm the target machines run it.
 - **Op-log fetch at scale** (before sub-milestone 3). In M2, reading the op log costs one round trip
-  per operation or View missing from the cache, so a fresh machine's first index build walks the
-  user's whole op log one object at a time. Options: a bulk op-log fetch RPC, or the service walking
-  operation parents.
+  per operation or View missing from the cache, so opening a workspace on a fresh machine walks the
+  workspace's whole op log one object at a time. Options: a bulk op-log fetch RPC, or the service
+  walking operation parents.
 - **Loading the target codebase** (before sub-milestone 3). The design has no bulk import.
   Committing the tree through a workspace may be enough.

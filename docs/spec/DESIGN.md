@@ -4,9 +4,10 @@ See [PRD.md](PRD.md) for the product requirements. This document covers the deci
 components and the contracts between them. Each component's API, behavior and internals are in its
 own document.
 
-A _cloud workspace_ is a jj workspace whose working copy the daemon serves on demand instead of
-writing it to disk, and a _cloud repo_ is a jj repo whose objects, per-user operation logs and trunk
-live on the workspace service. See the [glossary](../../GLOSSARY.md).
+A _cloud workspace_ is a named jj workspace with its own operation log, whose working copy the
+daemon serves on demand instead of writing it to disk, and a _cloud repo_ is a jj repo whose
+objects, workspaces' operation logs and trunk live on the workspace service. See the
+[glossary](../../GLOSSARY.md).
 
 ## Components
 
@@ -29,8 +30,8 @@ jj-cli ──gRPC/UDS──▶ daemon ──gRPC/HTTP2──▶ workspace-servic
                        └── FUSE mount (one per workspace)
 ```
 
-- **workspace-service** is the only source of truth for shared data: objects, each user's operation
-  log and op heads, and trunk.
+- **workspace-service** is the only source of truth for shared data: objects, the workspace
+  registry, each workspace's operation log and op heads, and trunk.
 - **daemon** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace
   overlay of local edits and the working-copy state.
 - **jj-cli** is stateless apart from workspace config. It implements jj-lib's store and working copy
@@ -51,55 +52,68 @@ trees and dirty paths, and never need to understand jj.
 ## Repository model
 
 - **Users** are identified by jj's `user.email`. The client asserts it and nothing verifies it,
-  because v1 has no authentication. Each repo directory records the email it was set up with, and
-  the CLI fails with a clear error if `user.email` no longer matches, so changing it never silently
-  switches op logs. An unset email is an error.
-- **One op log and View per user per cloud repo.** Op heads are keyed by `(repo, user)`. A user's
-  View holds only their own workspaces, bookmarks and visible commits, plus trunk. Users aren't
-  registered: a user the service hasn't seen has op heads `{root op}`, and their first publish
-  creates the entry.
-- **Unpushed work is private:** it is in no other user's View, and users share work only through
-  [trunk](#trunk-and-push). Objects still live in one store shared by all repos and users and are
-  readable by ID, which CI relies on; v1 has no ACLs.
-- **No merging between users.** Op logs are merged only between concurrent operations of the same
-  user (see [Concurrency](#publishing-and-consistency)). A View holds one user's state, so it stays
-  small and is stored whole.
-- **Bookmarks** belong to the user whose View holds them, by construction. The only gap is that
+  because v1 has no authentication. Users aren't registered. Each repo directory records the email
+  and workspace it was set up for, and the CLI fails with a clear error if `user.email` no longer
+  matches, so changing it never silently switches op logs. An unset email is an error.
+- **Cloud workspaces** are entities the service tracks, keyed by `(repo, user, name)`. A user
+  creates one explicitly with a name unique among their workspaces in the repo, following the repo
+  name rule. Op-heads calls for a workspace that doesn't exist fail with `NotFound`, so a typo never
+  starts a fresh op log. Deleting a workspace drops its registry entry and op heads; its objects
+  stay. See [ADR 0001](../adr/0001-op-log-per-workspace.md).
+- **One op log and View per cloud workspace.** Op heads are keyed by `(repo, user, workspace)`. A
+  View holds exactly one jj workspace, named as in the registry, plus that workspace's bookmarks and
+  visible commits, and trunk. Stock `jj workspace add`, `forget` and `rename` are blocked, because
+  they would put a second workspace into the View or break its link to the registry.
+- **Creating a workspace** publishes its first operation: `main@origin` at the current trunk and `@`
+  a new empty commit on it.
+- **One machine at a time.** A workspace has one working copy, so it is open on at most one machine.
+  The service records the holder, and `UpdateOpHeads` carries a holder token. Opening the workspace
+  on another machine takes the hold at once, without contacting the previous machine, and the
+  previous machine's next publish is rejected. Edits it never snapshotted stay in its daemon.
+- **Unpushed work is private to its workspace:** it is in no other View, even the same user's, and
+  workspaces share work only through [trunk](#trunk-and-push). Objects still live in one store
+  shared by all repos and users and are readable by ID, which CI relies on; v1 has no ACLs.
+- **No merging between workspaces.** Op logs are merged only between concurrent operations of the
+  same workspace (see [Concurrency](#publishing-and-consistency)). A View holds one workspace's
+  state, so it stays small and is stored whole.
+- **Bookmarks** belong to the workspace whose View holds them, by construction. The only gap is that
   anyone can claim another user's email.
-- **`jj undo` / `jj op restore`** keep stock jj semantics and affect only the user's own op log
+- **`jj undo` / `jj op restore`** keep stock jj semantics and affect only the workspace's own op log
   (R11).
-- **History** is expected to stay under 100k commits, so every machine builds the full commit index
-  locally from commits streamed in bulk from the service. There is no shallow history and no
-  server-side index.
+- **History** is expected to stay under 100k commits, so every workspace builds the full commit
+  index locally, when it is created, from commits streamed in bulk from the service, and updates it
+  incrementally after that. Each workspace has its own repo directory and index, because jj-lib
+  gives a repo directory exactly one op-heads store. There is no shallow history, no lazy index and
+  no server-side index.
 - **Sparse patterns** are not supported in v1. The working copy always contains every path.
 
 ## Trunk and push
 
 - **Trunk** is one commit ID per cloud repo, held by the service. It starts at the root commit. It
-  is the only state users share, and it has no op log: it only moves forward, so its history is its
-  commit ancestry. The service also appends `(commit, user, time)` to a per-repo push log on every
-  push. Nothing reads the push log in v1; it's kept for audit and debugging because it can't be
-  recovered later.
+  is the only state workspaces share, and it has no op log: it only moves forward, so its history is
+  its commit ancestry. The service also appends `(commit, user, workspace, time)` to a per-repo push
+  log on every push. Nothing reads the push log in v1; it's kept for audit and debugging because it
+  can't be recovered later.
 - **In the View** trunk is the untracked remote bookmark `main@origin`, with no local `main`
   bookmark and no Git remote behind `origin`. Stock `immutable_heads()` covers `trunk()` and
   untracked remote bookmarks, so jj also refuses to rewrite pushed commits locally. `main@origin`
-  changes only on push and fetch, so a user's op log changes only when they act.
+  changes only on push and fetch, so a workspace's op log changes only when the user acts in it.
 - **Push** (`jjw cws push`) moves trunk to a commit:
   1. The CLI refuses commits with conflicts or empty descriptions, as `jj git push` does. These are
      jj semantics, so the service doesn't check them.
   2. The daemon waits until every object written before the call is on the service, using the same
      barrier as publishing.
-  3. The service's `PushTrunk(repo, user, commit)` moves trunk atomically if the commit descends
-     from the current trunk, merges included. Pushing the current trunk commit again is a no-op, so
-     retries are safe. Anything else is rejected, and the user fetches, rebases and pushes again.
-     This fast-forward rule is the whole enforcement of trunk immutability (R12): nothing can move
-     trunk backwards or sideways.
+  3. The service's `PushTrunk(repo, user, workspace, commit)` moves trunk atomically if the commit
+     descends from the current trunk, merges included. Pushing the current trunk commit again is a
+     no-op, so retries are safe. Anything else is rejected, and the user fetches, rebases and pushes
+     again. This fast-forward rule is the whole enforcement of trunk immutability (R12): nothing can
+     move trunk backwards or sideways.
   4. The CLI publishes an operation that sets `main@origin` to the pushed commit.
 - **Fetch** (`jjw cws fetch`) reads trunk with `GetTrunk` and publishes one operation setting
   `main@origin` to it, or nothing if it hasn't moved. It never rebases bookmarks or changes, as
   `jj git fetch` doesn't.
-- **Undo:** undoing a push or fetch moves `main@origin` back in the user's View only. Trunk doesn't
-  move, and the next fetch restores `main@origin`. A push can't be undone.
+- **Undo:** undoing a push or fetch moves `main@origin` back in the workspace's View only. Trunk
+  doesn't move, and the next fetch restores `main@origin`. A push can't be undone.
 - **CI** reads trunk with `GetTrunk` and checks out its tree, with no op log.
 
 ## Object model
@@ -125,24 +139,26 @@ trees and dirty paths, and never need to understand jj.
 - **Writing objects:** objects written by the CLI are stored in the daemon and uploaded in the
   background. Nobody else can see them until an operation that references them is published.
 - **Publishing** is not [pushing](#trunk-and-push) and needs no separate command. Every jj command
-  that changes the repo ends by writing an operation and calling `UpdateOpHeads` on the user's op
-  heads, and that call makes the change visible to the user's other machines and durable. It is
+  that changes the repo ends by writing an operation and calling `UpdateOpHeads` on the workspace's
+  op heads, and that call makes the change durable, so it is there wherever the workspace is opened
+  next. It is
   synchronous: it returns only once the operation, every object it references and the new op heads
   are on the service. If any step fails, the command fails. Op heads never point to data the service
   doesn't have.
-- **Reading op heads:** every command reads the user's op heads from the service, so reads are never
-  stale. Trunk is read only by push and fetch.
+- **Reading op heads:** every command reads the workspace's op heads from the service, so reads are
+  never stale. Trunk is read only by push and fetch.
 - **Crash safety:** if anything dies before a publish finishes, the command fails and nothing
   published is lost. Objects written but never published aren't referenced by anything. Working-copy
   edits are still in the daemon's persisted overlay, so rerunning the command recreates them (R6).
-- **Concurrency:** jj doesn't lock the repo across processes. Two commands by the same user that run
-  at the same time (in two cloud workspaces, or on two machines) both start from the same op head
-  and each publishes its own operation. Because `UpdateOpHeads(old, new)` removes `old` and adds
-  `new`, the second writer doesn't fail; the repo just ends up with two op heads, and the next jj
-  command merges them with stock jj-lib logic (R5). If both operations rewrote the same change, the
-  user sees a divergent change and resolves it the normal way. Different users never share op heads,
-  so their operations never need merging; they meet only on trunk, where concurrent pushes are
-  serialized by the fast-forward rule.
+- **Concurrency:** jj doesn't lock the repo across processes. Two commands in the same workspace
+  that run at the same time (two terminals, or an IDE and a terminal), or a command run with an
+  older `--at-op`, both start from the same op head and each publishes its own operation. Because
+  `UpdateOpHeads(old, new)` removes `old` and adds `new`, the second writer doesn't fail; the
+  workspace just ends up with two op heads, and the next jj command merges them with stock jj-lib
+  logic (R5). If both operations rewrote the same change, the user sees a divergent change and
+  resolves it the normal way. Two machines never publish to one workspace, because only the holder
+  can. Different workspaces never share op heads, so their operations never need merging; they meet
+  only on trunk, where concurrent pushes are serialized by the fast-forward rule.
 
 ## Known limitations (v1)
 
@@ -157,9 +173,12 @@ trees and dirty paths, and never need to understand jj.
 
 ## Future work
 
-- **Sharing unpushed work.** A fetch could import another user's bookmarks, read from their op
-  heads, as read-only remote bookmarks (e.g. `feature@alice`), so users can review or build on each
-  other's work without merging op logs.
+- **Sharing unpushed work.** A fetch could import another workspace's bookmarks, read from its op
+  heads, as read-only remote bookmarks (e.g. `feature@alice/fix-login`), so users can review or
+  build on each other's work, or stack on their own work from another workspace, without merging op
+  logs.
+- **Index seeding or a lazy index**, if building a new workspace's full index is too slow for R1 (an
+  M4 open question in the [roadmap](../plan/mvp-impl-roadmap.md)).
 - **Async publish and watched op heads**, if round-trip latency or network blips hurt (e.g.
   developers over VPN):
   - Writes: `UpdateOpHeads` returns once the new operation is fsync'd locally, and a persisted queue
@@ -167,8 +186,9 @@ trees and dirty paths, and never need to understand jj.
     need no changes.
   - Reads: the daemon keeps a `WatchOpHeads` stream open, prefetches new ops and Views, and serves
     `GetOpHeads` locally as the service heads plus unpublished local heads.
-  - Costs: unpublished operations become data that exists only on the daemon, other machines see
-    changes only after publish, and the CLI should warn about operations that stay unpublished.
+  - Costs: unpublished operations become data that exists only on the daemon, a workspace moved to
+    another machine sees them only after publish, and the CLI should warn about operations that stay
+    unpublished.
 - **Snapshot filtering hooks**, if ignored files make snapshots slow. Two generic hooks that know
   nothing about ignore rules: `ListDirty(ws, skip_prefixes[])`, and reporting a directory missing
   from the base tree as one entry (expanded on request). The CLI would compute the skip list from

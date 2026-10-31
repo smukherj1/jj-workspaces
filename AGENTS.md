@@ -13,3 +13,5 @@ See dir `docs` for documentation:
   any other documents the plan document you're implementing references.
   - [MVP roadmap](docs/plan/mvp-impl-roadmap.md) is the source of truth for milestones and open
     questions. List each open question under the milestone it blocks, not in the spec.
+
+- Run `task fmt:md` to format markdown files after writing them.

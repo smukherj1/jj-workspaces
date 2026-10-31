@@ -23,9 +23,10 @@ files.
    `describe`, etc.) work without special workflows.
 4. **Build-friendly:** builds see a normal filesystem, and reads that hit the cache are close to
    local-disk speed.
-5. **Private work, shared trunk:** many developers work in one cloud repo. Each user's bookmarks,
-   in-progress commits and operation history are their own, and they share finished work by pushing
-   it to trunk, which only moves forward.
+5. **Private work, shared trunk:** many developers work in one cloud repo, each in as many named
+   cloud workspaces as they like. Each workspace's bookmarks, in-progress commits and operation
+   history are its own, so undo in one never touches another, and finished work is shared by
+   pushing it to trunk, which only moves forward.
 
 ## 3. Non-Goals (v1)
 
@@ -35,7 +36,8 @@ files.
 - Replacing existing code review systems.
 - Authentication and authorization. A user is whoever their jj `user.email` says, and nothing stops
   one user from acting as another.
-- Seeing or building on another user's unpushed work. Users share work only through trunk.
+- Seeing or building on unpushed work from another workspace, even the same user's. Workspaces
+  share work only through trunk.
 
 ## 4. Users
 
@@ -63,9 +65,9 @@ files.
 - Implements a custom `WorkingCopy` / `LockedWorkingCopy` that does **not** write files to disk. A
   checkout tells the daemon to point the VFS at a root tree ID, and a snapshot asks the daemon for
   the set of modified paths instead of scanning the tree.
-- Registered through jj's store factories. Creating a cloud workspace goes through the local daemon,
-  which sets up the machine's repo directory on first use and mounts the workspace; no local clone
-  is made.
+- Registered through jj's store factories. Creating a cloud workspace registers it, by name, on the
+  remote service and goes through the local daemon, which sets up the workspace's repo directory and
+  mounts the workspace; no local clone is made.
 
 ### 5.2 Local daemon
 
@@ -87,15 +89,16 @@ files.
 
 ### 5.3 Remote service
 
-- Source of truth and durable storage for all repository data: commits, trees, file contents, each
-  user's operation log, view state and op heads, and trunk.
-- Each user has their own operation log, so one user's commands never change another user's history.
-  Trunk is the only state users share. The service only lets it move forward, so a commit pushed to
-  trunk can never be removed from it.
+- Source of truth and durable storage for all repository data: commits, trees, file contents, the
+  registry of cloud workspaces, each workspace's operation log, view state and op heads, and trunk.
+- Each workspace has its own operation log, so commands in one workspace never change another
+  workspace's history. Trunk is the only state workspaces share. The service only lets it move
+  forward, so a commit pushed to trunk can never be removed from it.
 - Provides batch fetch APIs, tree and metadata queries (so the client can list a directory without
   downloading blobs), and ideally server-side diff and history queries for large ranges.
-- Sharing between machines goes through the remote service. Because a user's operation log and view
-  state live here, they can pick up the same repository state from any machine.
+- Sharing between machines goes through the remote service. Because a workspace's operation log and
+  view state live here, the user can move the workspace to another machine and pick up its state
+  there. A workspace is open on one machine at a time.
 
 ### 5.4 Object IDs
 
@@ -104,20 +107,20 @@ files.
 
 ## 6. Key Requirements
 
-| ID  | Requirement                                                                                                           | Priority |
-| --- | --------------------------------------------------------------------------------------------------------------------- | -------- |
-| R1  | `jj workspace add` / checkout completes in < 5 s; cost scales with the diff between trees, not the repo size          | P0       |
-| R2  | File contents are downloaded only on first access, and stat/readdir need no blob downloads                            | P0       |
-| R3  | `jj status` / snapshot time scales with modified files plus ignored files in the mount, not the total file count      | P0       |
-| R4  | Cached reads within ~1.5× of native local-disk latency                                                                | P0       |
-| R5  | Correct jj semantics: commits, rewrites, conflicts, and the operation log behave the same as with the default backend | P0       |
-| R6  | Daemon crash or restart does not lose uncommitted local edits                                                         | P0       |
-| R7  | Local cache is shared across workspaces and deduplicated by content hash                                              | P1       |
-| R8  | Prefetch API/hints for builds (for example "prefetch these paths/targets")                                            | P1       |
-| R9  | Graceful degradation: clear errors (not hangs) when the remote is unreachable, with bounded timeouts                  | P1       |
-| R10 | Observability: metrics for cache hit rate, fetch latency, and bytes fetched per workspace                             | P1       |
-| R11 | Users are independent: one user's commands, including `undo` and `op restore`, never change another user's history    | P0       |
-| R12 | Trunk only moves forward: a push that would remove a commit from trunk is rejected by the remote service              | P0       |
+| ID  | Requirement                                                                                                                                                              | Priority |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| R1  | `jjw cws workspace create` / switching revisions completes in < 5 s; cost scales with the diff between trees, not the repo size                                          | P0       |
+| R2  | File contents are downloaded only on first access, and stat/readdir need no blob downloads                                                                               | P0       |
+| R3  | `jj status` / snapshot time scales with modified files plus ignored files in the mount, not the total file count                                                         | P0       |
+| R4  | Cached reads within ~1.5× of native local-disk latency                                                                                                                   | P0       |
+| R5  | Correct jj semantics: commits, rewrites, conflicts, and the operation log behave the same as with the default backend                                                    | P0       |
+| R6  | Daemon crash or restart does not lose uncommitted local edits                                                                                                            | P0       |
+| R7  | Local cache is shared across workspaces and deduplicated by content hash                                                                                                 | P1       |
+| R8  | Prefetch API/hints for builds (for example "prefetch these paths/targets")                                                                                               | P1       |
+| R9  | Graceful degradation: clear errors (not hangs) when the remote is unreachable, with bounded timeouts                                                                     | P1       |
+| R10 | Observability: metrics for cache hit rate, fetch latency, and bytes fetched per workspace                                                                                | P1       |
+| R11 | Workspaces are independent: commands in one workspace, including `undo` and `op restore`, never change another workspace's history, whether or not the same user owns it | P0       |
+| R12 | Trunk only moves forward: a push that would remove a commit from trunk is rejected by the remote service                                                                 | P0       |
 
 ## 7. Success Metrics
 
@@ -145,8 +148,11 @@ files.
 - Windows and macOS support, using platform alternatives to FUSE (for example ProjFS on Windows and
   FSKit on macOS).
 - Server side authentication, authorization (ACLs), and replication. ACLs would also protect each
-  user's operation log from other users and let CI read users' unpushed commits.
-- Sharing unpushed work between users, for example to review or build on another user's bookmarks.
+  user's workspaces from other users and let CI read users' unpushed commits.
+- Sharing unpushed work between workspaces, for example to review or build on another user's
+  bookmarks, or to stack one of your own features on another.
+- Recovering edits that were never snapshotted on a machine a workspace was moved away from.
 - Presubmit CI that tests a user's unpushed commits applied on top of a trunk commit.
-- Server-side commit index for revset evaluation (`jj log`) on large histories. In v1, jj-lib builds
-  its index locally from the commit graph.
+- Server-side or lazily built commit index for revset evaluation (`jj log`) on large histories. In
+  v1, jj-lib builds each workspace's full index locally from the commit graph when the workspace is
+  created.

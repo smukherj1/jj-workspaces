@@ -9,22 +9,27 @@ that read and rewrite history work through the stack, with no files checked out.
 
 ## Outcome
 
-- `jjw cws repo create <name> [path]` creates a cloud repo on the service and sets up its repo
-  directory at `path` (default `./<name>`) for the user in `user.email`, with a `default` workspace
-  whose `@` is on `root()`. Later commands there fail clearly if `user.email` changes.
+- `jjw cws repo create <repo>` creates a cloud repo on the service. Workspaces are created
+  separately, by name: `jjw cws workspace create <repo> <name> [path]` registers a cloud workspace
+  for the user in `user.email` and sets up its repo directory at `path` (default `./<name>`), with
+  `@` a new empty commit on `root()`. `jjw cws workspace list` and `delete` list and delete the
+  user's workspaces on the service. Later commands in the directory fail clearly if `user.email`
+  changes. See [ADR 0001](../adr/0001-op-log-per-workspace.md).
 - In that directory, `jj new`, `describe`, `rebase`, `log`, `op log` and `undo` work with
-  `--ignore-working-copy`. Commands that would snapshot or check out fail with a clear error.
+  `--ignore-working-copy`. Commands that would snapshot or check out fail with a clear error, and
+  stock `jj workspace add`, `forget` and `rename` fail.
 - Two mutating commands run with the same `--at-op` publish sibling op heads, and the next command
   merges them.
-- Op heads are kept per user. Users never see or change each other's op heads, and a user the
-  service hasn't seen starts at the root operation.
+- Op heads are kept per workspace. Workspaces never see or change each other's op heads, even the
+  same user's, a new workspace starts at the root operation, and op heads of an unknown workspace
+  are `NotFound`.
 - The service stores verified objects and op heads on local disk. The daemon persists written
   objects, uploads them in the background, caches reads, fetches the commit graph in bulk, and
   publishes an operation only once every object written before it is on the service.
 
-Not in M2: trunk, `jjw cws fetch` and `jjw cws push`, and setting up a repo directory for an
-existing repo, for a second user or on another machine (M3); the two-machine outcomes (M3, M4);
-working copies (M4, M5); `GetTreeRecursive` and daemon blob metadata (M4); cache eviction and
+Not in M2: trunk, `jjw cws fetch` and `jjw cws push`, and starting a new workspace on trunk (M3);
+opening a workspace on another machine, the holder token, and moving repo directories to the daemon
+(M4); working copies (M4, M5); `GetTreeRecursive` and daemon blob metadata (M4); cache eviction and
 cleanup of objects left by failed publishes (M7).
 
 ## Decisions
@@ -52,18 +57,26 @@ cleanup of objects left by failed publishes (M7).
 ### Repos and publishing
 
 - **Repo names** match `[A-Za-z0-9][A-Za-z0-9._-]{0,99}`.
-- **Users:** the user is jj's `user.email`, sent on every op-heads call. The service accepts any
-  non-empty string of at most 254 bytes with no control characters, and otherwise returns
-  `InvalidArgument`. Users aren't registered.
-- **Repo creation:** `WorkspaceService.CreateRepo(name)` records the repo and returns
-  `AlreadyExists` if it exists. It doesn't touch op heads: `GetOpHeads(repo, user)` for a user with
-  no entry returns `{root op ID}`. The `cws` op-heads initializer does nothing, so jj-lib's
-  `ReadonlyRepo::init` never adds the root operation as an op head. Workspace init then publishes
-  the user's first real operation (the `default` workspace and its `@`) with
-  `UpdateOpHeads(repo, user, [root], new)`, which creates the user's entry. M3 adds trunk and treats
-  a repo with no stored trunk as being at the root commit, so M2 stores nothing for it.
-- **Storage:** one content-addressed object store shared by all repos and users, plus op heads per
-  `(repo, user)`. `GetOpHeads` and `UpdateOpHeads` return `NotFound` for an unknown repo.
+- **Users:** the user is jj's `user.email`, sent on every workspace and op-heads call. The service
+  accepts any non-empty string of at most 254 bytes with no control characters, and otherwise
+  returns `InvalidArgument`. Users aren't registered.
+- **Workspace names** follow the repo name rule and are unique per `(repo, user)`. The name is also
+  the jj workspace name in the View.
+- **Repo creation:** `WorkspaceService.CreateRepo(repo)` records the repo and returns
+  `AlreadyExists` if it exists. It creates no workspace. M3 adds trunk and treats a repo with no
+  stored trunk as being at the root commit, so M2 stores nothing for it.
+- **Workspace creation:** `CreateWorkspace(repo, user, name)` registers the workspace with op heads
+  `{root op ID}`, and returns `AlreadyExists` if the user already has it. The `cws` op-heads
+  initializer only writes its files, so jj-lib's `ReadonlyRepo::init` never adds the root operation
+  as an op head. `Workspace::init_with_factories`, given the workspace name, then publishes the
+  workspace's first real operation (the workspace and its `@`) with
+  `UpdateOpHeads(repo, user, workspace, [root], new)`.
+- **Workspace deletion:** `DeleteWorkspace(repo, user, name)` drops the registry entry and op heads.
+  Objects stay. In M2 the CLI doesn't touch the repo directory; later commands there fail with
+  `NotFound`.
+- **Storage:** one content-addressed object store shared by all repos and users, plus a workspace
+  registry and op heads per `(repo, user, workspace)`. Workspace and op-heads calls return
+  `NotFound` for an unknown repo, and op-heads calls return `NotFound` for an unknown workspace.
 - **Publish barrier:** the daemon's `UpdateOpHeads` waits until every object written to the daemon
   before the call is uploaded. It doesn't parse the operation or View. The service's `UpdateOpHeads`
   rejects a new operation it doesn't have with `FailedPrecondition`.
@@ -124,10 +137,11 @@ cleanup of objects left by failed publishes (M7).
 - **Service:** `--data-dir` is required.
   - Objects go in `<data-dir>/objects/`. A sidecar `<object>.meta` holds the upload time,
     `(size, SHA-256)` for blobs, and the generation for commits once computed.
-  - A repo is the directory `<data-dir>/repos/<name>/`. A user's op heads go in
-    `<data-dir>/repos/<name>/op_heads/<user>`, with the email percent-encoded (everything outside
-    `[A-Za-z0-9._@-]`), one hex ID per line, rewritten atomically under a per-repo mutex. This
-    assumes a single service process.
+  - A repo is the directory `<data-dir>/repos/<repo>/`. A workspace is the directory
+    `<data-dir>/repos/<repo>/workspaces/<user>/<name>/`, with the email percent-encoded (everything
+    outside `[A-Za-z0-9._@-]`). Its `op_heads` file holds one hex ID per line, rewritten atomically
+    under a per-repo mutex that also covers creating and deleting workspaces. This assumes a single
+    service process.
   - Everything sits behind a Go interface that M7 replaces.
 - **Daemon:** `--data-dir` defaults to `$XDG_STATE_HOME/jjw`, or `~/.local/state/jjw` if that's
   unset.
@@ -141,17 +155,24 @@ cleanup of objects left by failed publishes (M7).
 
 ### CLI
 
-- **Repo directory in M2** is the `path` given to `jjw cws repo create`, `./<name>` by default as
-  `jj git clone` names its destination. With no workspaces yet, it's where the user runs `jj`, so it
-  isn't in a daemon-managed location; M4 moves it there. Its `.jj/repo` has `store` (`cws`),
-  `workspace_store` (stock `simple`), `op_store` and `op_heads` (`cws`, each holding a `repo_name`
-  file), `index` (`cws`) and `submodule_store` (stock). `op_heads` also holds a `user_email` file.
+- **Repo directory in M2** is the `path` given to `jjw cws workspace create`, `./<name>` by default
+  as `jj git clone` names its destination. With no working copy yet, it's where the user runs `jj`,
+  so it isn't in a daemon-managed location; M4 moves it there. Each workspace has its own repo
+  directory and commit index. Its `.jj/repo` has `store` (`cws`), `workspace_store` (stock
+  `simple`), `op_store` and `op_heads` (`cws`, each holding a `repo_name` file), `index` (`cws`) and
+  `submodule_store` (stock). `op_heads` also holds `user_email` and `workspace_name` files, written
+  by its initializer.
 - **User check:** the `cws` op-heads store loader compares `user_email` with `user.email` from the
   settings it's given. A mismatch fails with
   `this repo directory belongs to <old>; user.email is <new>` and the hint
   `set it back, e.g. for this repo only: jj config set --repo user.email <old>`. An empty
   `user.email` fails with `user.email isn't set` and a hint to set it. Every command that loads the
-  repo goes through the loader, so none can publish to another user's op heads by accident.
+  repo goes through the loader, so none can publish to another user's op heads by accident. Op
+  heads of a deleted workspace fail with `workspace <name> doesn't exist in repo <repo>`.
+- **Stock workspace commands:** the dispatch hook that blocks stock repo creation also rejects
+  `jj workspace add`, `forget` and `rename` in a cloud repo with
+  `cloud workspaces are managed with jjw cws workspace` and a hint naming `jjw cws workspace create`
+  or `delete`. `jj workspace list` and `root` work.
 - **Working copy `cws-none`:** stores the op ID and tree ID it was initialized with.
   `start_mutation` fails with `this workspace has no working copy` and the hint
   `pass --ignore-working-copy`, so any command that would snapshot or check out fails.
@@ -159,7 +180,7 @@ cleanup of objects left by failed publishes (M7).
   - `revset-aliases."trunk()" = 'latest(present(main@origin) | root())'`. Cloud repos have no Git
     remotes, so the stock alias finds nothing. `main@origin` appears once M3 adds fetch and push;
     until then `trunk()` is `root()`.
-  - `revsets.log` and `immutable_heads()` stay stock: a View holds only its user's commits.
+  - `revsets.log` and `immutable_heads()` stay stock: a View holds only its workspace's commits.
 - **Daemon client:** `DaemonClient` becomes cheaply cloneable with `&self` methods (tonic channels
   clone), shared by the store shims, the working copy and commands.
 
@@ -168,12 +189,12 @@ cleanup of objects left by failed publishes (M7).
 New and changed paths:
 
 ```
-proto/jjcw/service/v1/workspace_service.proto   object, repo and op-heads RPCs
+proto/jjcw/service/v1/workspace_service.proto   object, repo, workspace and op-heads RPCs
 proto/jjcw/daemon/v1/daemon.proto               Store, OpStore, OpHeads, Workspace RPCs
 lib-go/gitobj/                    kinds, sha1dc IDs, commit parent parsing, blob metadata
 lib-go/objstore/                  on-disk content-addressed object directory (service and daemon)
 lib-go/service/storage/           Storage interface and its file implementation
-lib-go/service/                   RPC handlers: objects.go, repos.go, commitgraph.go
+lib-go/service/                   RPC handlers: objects.go, repos.go, workspaces.go, commitgraph.go
 lib-go/daemon/localstore/         primary store, cache, complete heads, op ID lists
 lib-go/daemon/uploader/           background uploader and publish barrier
 lib-go/daemon/serviceclient/      batched and chunked object calls, op heads, commit graph
@@ -188,6 +209,7 @@ bin-rs/jjw/src/store/index_store.rs
 bin-rs/jjw/src/working_copy.rs    cws-none working copy and factory
 bin-rs/jjw/src/default_config.rs  default config layer
 bin-rs/jjw/src/commands/cws/repo.rs      jjw cws repo create
+bin-rs/jjw/src/commands/cws/workspace.rs jjw cws workspace create, list, delete
 e2e/tests/repo.rs                 happy path
 e2e/tests/repo_errors.rs          CLI unhappy paths against the real daemon and service
 ```
@@ -249,31 +271,43 @@ Tests:
       and `DownloadObject` returns the same bytes. A size mismatch in `UploadObject` is rejected.
 - [ ] Integration: objects survive a server restart on the same data dir.
 
-## 3. Service repos and op heads
+## 3. Service repos, workspaces and op heads
 
-Outcome: the service creates repos and keeps their op heads with atomic updates.
+Outcome: the service creates repos, keeps a registry of workspaces, and keeps each workspace's op
+heads with atomic updates.
 
 - [ ] `CreateRepo(repo)`: validates the name (`InvalidArgument`), creates the repo directory,
       `AlreadyExists` if the repo exists.
-- [ ] `GetOpHeads(repo, user) → op_ids[]`: `NotFound` for an unknown repo, `InvalidArgument` for an
-      invalid user, `{root op ID}` for a user with no entry.
-- [ ] `UpdateOpHeads(repo, user, old_ids[], new_id)`: `NotFound` for an unknown repo,
-      `InvalidArgument` for an invalid user, `FailedPrecondition` if `new_id` isn't stored as an
-      operation. Removes `old_ids` from the user's op heads (ignoring ones already gone) and adds
-      `new_id`, atomically under the per-repo mutex.
+- [ ] `CreateWorkspace(repo, user, name)`: `NotFound` for an unknown repo, `InvalidArgument` for an
+      invalid user or name, `AlreadyExists` if the user has the workspace. Creates the workspace
+      directory with op heads `{root op ID}`.
+- [ ] `ListWorkspaces(repo, user) → names[]`: `NotFound` for an unknown repo, sorted names, empty
+      for a user with none.
+- [ ] `DeleteWorkspace(repo, user, name)`: `NotFound` for an unknown repo or workspace. Removes the
+      workspace directory.
+- [ ] `GetOpHeads(repo, user, workspace) → op_ids[]`: `NotFound` for an unknown repo or workspace,
+      `InvalidArgument` for an invalid user.
+- [ ] `UpdateOpHeads(repo, user, workspace, old_ids[], new_id)`: `NotFound` for an unknown repo or
+      workspace, `InvalidArgument` for an invalid user, `FailedPrecondition` if `new_id` isn't
+      stored as an operation. Removes `old_ids` from the workspace's op heads (ignoring ones already
+      gone) and adds `new_id`, atomically under the per-repo mutex. The holder token comes in M4.
 
 Tests:
 
-- [ ] Integration: create, get (`{root}`), update, get. `AlreadyExists` on a second create, and
-      `InvalidArgument` for `""`, `.x`, `a/b` and a 101-character name.
-- [ ] Integration: two users in one repo. Updates by one never change the other's op heads, a third
-      user still reads `{root}`, and `InvalidArgument` for an empty user and one with a newline. An
-      email with `/` and `%` round-trips through its percent-encoded file name.
-- [ ] Integration: `NotFound` from both op-heads RPCs for an unknown repo, and `FailedPrecondition`
-      for an op that isn't stored.
-- [ ] Integration: 20 parallel clients, as one user, each publish an op from the same old head. All
-      20 end up as that user's heads, and the root is gone.
-- [ ] Integration: op heads survive a restart.
+- [ ] Integration: create repo, create workspace, get (`{root}`), update, get. `AlreadyExists` on a
+      second create of either, and `InvalidArgument` for repo and workspace names `""`, `.x`, `a/b`
+      and a 101-character name.
+- [ ] Integration: two workspaces of one user and one workspace of another user with the same name
+      as one of them. Updates in one never change the others' op heads, and each new one reads
+      `{root}`. `InvalidArgument` for an empty user and one with a newline. An email with `/` and
+      `%` round-trips through its percent-encoded directory name.
+- [ ] Integration: list returns only the user's workspaces. After delete, list omits it, both
+      op-heads RPCs return `NotFound`, and the name can be created again starting at `{root}`.
+- [ ] Integration: `NotFound` from the workspace and op-heads RPCs for an unknown repo and an
+      unknown workspace, and `FailedPrecondition` for an op that isn't stored.
+- [ ] Integration: 20 parallel clients each publish an op to one workspace from the same old head.
+      All 20 end up as its heads, and the root is gone.
+- [ ] Integration: the registry and op heads survive a restart.
 
 ## 4. Service commit graph
 
@@ -331,7 +365,7 @@ Tests:
 - [ ] Integration: prefix resolution finds a unique op, and reports ambiguous and unknown prefixes.
       The list survives a daemon restart.
 
-## 6. Daemon uploads, op heads and repo creation
+## 6. Daemon uploads, op heads, repos and workspaces
 
 Outcome: written objects reach the service in the background, and an operation is published only
 once everything written before it is uploaded.
@@ -345,11 +379,14 @@ once everything written before it is uploaded.
   - `Barrier(ctx)`: captures the current sequence number and waits until every object up to it is
     confirmed. It fails at the first failed attempt for one of those objects, and retries any of
     them that are backing off at once.
-- [ ] `OpHeads.GetOpHeads(repo, user)`: forwarded to the service on every call.
-- [ ] `OpHeads.UpdateOpHeads(repo, user, old_ids[], new_id)`: `Barrier`, then the service call. The
-      barrier failing returns `Unavailable` with the upload error. `InvalidArgument` for the user
-      passes through.
-- [ ] `Workspace.CreateRepo(repo)`: forwarded. `AlreadyExists` and `InvalidArgument` pass through.
+- [ ] `OpHeads.GetOpHeads(repo, user, workspace)`: forwarded to the service on every call.
+- [ ] `OpHeads.UpdateOpHeads(repo, user, workspace, old_ids[], new_id)`: `Barrier`, then the service
+      call. The barrier failing returns `Unavailable` with the upload error. `NotFound` and
+      `InvalidArgument` pass through.
+- [ ] `Workspace.CreateRepo(repo)`, `Workspace.Create(repo, user, name)`,
+      `Workspace.List(repo, user)` and `Workspace.Delete(repo, user, name)`: forwarded to the
+      service's `CreateRepo`, `CreateWorkspace`, `ListWorkspaces` and `DeleteWorkspace`. Errors pass
+      through. Mounts and repo directories come in M4.
 
 Tests:
 
@@ -360,9 +397,9 @@ Tests:
 - [ ] Integration: a wrapper stalls `PutObjects`. `UpdateOpHeads` fails after about
       `--service-timeout`, not after the CLI deadline.
 - [ ] Integration: a daemon restarted on the same data dir uploads what was left in primary.
-- [ ] Integration: `CreateRepo` passes `AlreadyExists` through.
-- [ ] Integration: two users through one daemon publish to the same repo, and each reads back only
-      their own op heads.
+- [ ] Integration: `CreateRepo` and `Create` pass `AlreadyExists` through.
+- [ ] Integration: two users through one daemon, one with two workspaces, publish to the same repo,
+      and each workspace reads back only its own op heads.
 
 ## 7. Daemon bulk commit-graph fetch
 
@@ -403,38 +440,49 @@ Tests:
       written through stock `SimpleOpStore` and through `op_proto`, give the same protobuf bytes and
       decode back.
 
-## 9. CLI store shims, repo creation and defaults
+## 9. CLI store shims, repo and workspace commands, and defaults
 
-Outcome: `jjw cws repo create` makes a working cloud repo, and jj history commands work in it.
+Outcome: `jjw cws repo create` and `jjw cws workspace create` make a working cloud workspace, and
+jj history commands work in it.
 
-- [ ] `daemon.proto` client RPCs for `Store`, `OpStore`, `OpHeads` and `Workspace.CreateRepo`, and
-      matching `DaemonClient` methods. The client accepts 8 MiB messages. gRPC errors map to jj-lib
-      errors: `NotFound` to `ObjectNotFound`, `Unavailable` and others to an error carrying the
-      daemon's message.
+- [ ] `daemon.proto` client RPCs for `Store`, `OpStore`, `OpHeads` and `Workspace` (`CreateRepo`,
+      `Create`, `List`, `Delete`), and matching `DaemonClient` methods. The client accepts 8 MiB
+      messages. gRPC errors map to jj-lib errors: `NotFound` to `ObjectNotFound`, `Unavailable` and
+      others to an error carrying the daemon's message.
 - [ ] `store.rs` registers, as type `cws`:
   - `store/backend.rs`: `Backend` over `Store`, with commit ID length 20 and change ID length 16.
     The root commit and empty tree are synthesized. Signing, copy records, tracked copies and `gc`
     behave as in [Decisions](#objects-and-ids).
   - `store/op_store.rs`: `OpStore` over `OpStore`, reading `repo_name`. The root operation and root
     view are synthesized.
-  - `store/op_heads_store.rs`: `OpHeadsStore` over `OpHeads`, with a no-op initializer and the file
-    lock. The initializer writes `user_email`, and the loader does the user check.
+  - `store/op_heads_store.rs`: `OpHeadsStore` over `OpHeads`, with the file lock. The initializer
+    writes `repo_name`, `user_email` and `workspace_name` and publishes nothing, and the loader does
+    the user check and maps `NotFound` to the deleted-workspace error.
   - `store/index_store.rs`: the `DefaultIndexStore` wrapper with the bulk commit-graph fetch.
     `collect_unindexed_commit_ids(index_dir, op)` is a separate function.
 - [ ] `working_copy.rs`: the `cws-none` working copy and factory.
 - [ ] `default_config.rs`: the default config layer.
-- [ ] `commands/cws/repo.rs`: `jjw cws repo create <name> [path]`, with `path` defaulting to
-      `./<name>`:
-  1. Fails with `<path> already has a .jj directory`, or with the unset `user.email` error, before
-     calling the daemon.
-  2. Calls `Workspace.CreateRepo(name)`. `AlreadyExists` becomes
-     `repo <name> already exists on the workspace service`, and `InvalidArgument` passes the name
-     rule through.
-  3. Runs `Workspace::init_with_factories` with the `cws` factories, and prints the repo name and
-     path.
+- [ ] `commands/cws/repo.rs`: `jjw cws repo create <repo>` calls `Workspace.CreateRepo(repo)`.
+      `AlreadyExists` becomes `repo <repo> already exists on the workspace service`, and
+      `InvalidArgument` passes the name rule through.
+- [ ] `commands/cws/workspace.rs`:
+  - `jjw cws workspace create <repo> <name> [path]`, with `path` defaulting to `./<name>`:
+    1. Fails with `<path> already has a .jj directory`, or with the unset `user.email` error, before
+       calling the daemon.
+    2. Calls `Workspace.Create(repo, user, name)`. `AlreadyExists` becomes
+       `workspace <name> already exists in repo <repo>`, `NotFound` becomes
+       `repo <repo> doesn't exist`, and `InvalidArgument` passes the name rule through.
+    3. Runs `Workspace::init_with_factories` with the `cws` factories and the workspace name, and
+       prints the repo, workspace and path.
 
-  If step 3 fails, the repo exists on the service with no repo directory. M3's setup for an existing
-  repo recovers it. The error says so.
+    If step 3 fails, the workspace is registered with no repo directory. The error says so and
+    suggests `jjw cws workspace delete <repo> <name>` before creating it again.
+
+  - `jjw cws workspace list <repo>`: one name per line.
+  - `jjw cws workspace delete <repo> <name>`: deletes the workspace on the service and leaves any
+    repo directory in place, saying so.
+- [ ] Dispatch hook: rejects `jj workspace add`, `forget` and `rename` in cloud repos (see
+      [CLI](#cli)).
 
 - [ ] `main.rs`: `add_store_factories`, `add_working_copy_factories` and `add_extra_config`. The
       `git init`, `git clone` and `debug init-simple` block stays.
@@ -449,16 +497,24 @@ Tests:
       abandon and rewrite commits. It includes the abandoned commit and the rewritten predecessor,
       and stops at an op that has an `op_links` marker.
 - [ ] Unit: the mapping from gRPC errors to jj-lib errors.
-- [ ] E2E (`e2e/tests/repo.rs`): `repo_lifecycle`. `repo create` with no `path` (the repo directory
-      is `./<name>`), then `jj new`, `describe`, another `new`, `rebase`, `log` (snapshot of the
-      default revset and `trunk()`), `op log` and `undo`, all with `--ignore-working-copy`.
+- [ ] E2E (`e2e/tests/repo.rs`): `repo_lifecycle`. `repo create`, then `workspace create` with no
+      `path` (the repo directory is `./<name>`, and `jj log` shows `<name>@`), then `jj new`,
+      `describe`, another `new`, `rebase`, `log` (snapshot of the default revset and `trunk()`),
+      `op log` and `undo`, all with `--ignore-working-copy`.
+- [ ] E2E: `independent_workspaces`. Two workspaces of one user in one repo. Commits and operations
+      in the first don't appear in the second's `log` or `op log`, the second starts on the root
+      commit, and `jj undo` in the second leaves the first unchanged. `workspace list` shows both.
 - [ ] E2E: `concurrent_at_op`. Two `describe`s with the same `--at-op` publish two op heads, and the
       next `jj log` reports the concurrent operations, merges them, and shows both changes.
 - [ ] Integration (`e2e/tests/repo_errors.rs`, using the harness):
-  - `repo create` with an existing name: the error, and no `.jj` created.
-  - `repo create` where `.jj` exists: the error, and the name is still free.
-  - `repo create` with an invalid name: the name rule in the error.
-  - `repo create` with `user.email` unset: the error, and the name is still free.
+  - `repo create` with an existing name, and with an invalid name: the errors.
+  - `workspace create` with an existing name: the error, and no `.jj` created.
+  - `workspace create` in an unknown repo: the error.
+  - `workspace create` where `.jj` exists, and with `user.email` unset: the errors, and the name is
+    still free.
+  - `workspace create` with an invalid name: the name rule in the error.
+  - `jj log` in a workspace deleted with `workspace delete`: the deleted-workspace error.
+  - `jj workspace add`, `forget` and `rename`: the error and hint, and no new operation.
   - `jj log` with a different `user.email` than at creation: the mismatch error and hint, and no new
     operation for either email. With `--config user.email=<old>` it works.
   - `jj log` without `--ignore-working-copy`: `this workspace has no working copy` and the hint.
@@ -473,31 +529,34 @@ After the code is in:
 - [ ] [DESIGN.md](../spec/DESIGN.md):
   - Object model: operation and view IDs, root objects, the wire form `(id, kind, content)`.
   - Publishing: the barrier and how it fails fast when the service is unreachable.
-  - Repository model: repo creation leaves op heads unset, so every user starts at the root
-    operation, and repo names. Users and per-user op heads are already in the spec.
+  - Repository model: repo names. Workspaces, the registry and per-workspace op heads are already
+    in the spec ([ADR 0001](../adr/0001-op-log-per-workspace.md)).
 - [ ] [workspace-service.md](../spec/workspace-service.md):
   - `--data-dir` and the storage layout behind the `Storage` interface.
   - `CreateRepo`, the `NotFound`, `InvalidArgument` and `FailedPrecondition` cases, user key
-    validation and encoding, message sizes and chunking.
+    validation and encoding, message sizes and chunking. The workspace RPCs are already in the
+    spec; check their errors match.
   - `GetCommitGraph` exactness with stored generation numbers.
 - [ ] [daemon.md](../spec/daemon.md):
   - `--data-dir` and the local storage layout.
   - The uploader, its backoff, and the barrier.
-  - The final `Store`, `OpStore`, `OpHeads` and `Workspace.CreateRepo` RPCs, with repo names on
-    `OpStore` and prefix resolution.
+  - The final `Store`, `OpStore`, `OpHeads` and `Workspace` RPCs, with repo names on `OpStore` and
+    prefix resolution.
   - Complete heads in `FetchCommitGraph`, fetch verification, and the op-heads file lock.
   - Remove `GetCopyRecords`. Blob metadata starts in M4.
 - [ ] [jj-cli.md](../spec/jj-cli.md):
-  - `jjw cws repo create`, and the narrowed repo creation block.
+  - The narrowed repo creation block. `repo create` and the `workspace` commands are already in the
+    spec; check their errors match.
   - Operation and view encoding, the copied conversion code, and the root objects.
   - The `cws-none` working copy.
   - Commit index: replace `FetchCommitGraph(view heads)` with the wrapper's walk over unindexed ops,
     hidden commits included.
-  - User identity: the `user_email` file in the repo directory. The check and its error are already
-    in the spec.
+  - User identity: the `user_email` and `workspace_name` files in the repo directory. The check and
+    its error are already in the spec.
   - v1 limitations: no signing, no copy records or tracked copies, no `jj util gc`.
-- [ ] [GLOSSARY.md](../../GLOSSARY.md): already has **Repo directory**, **Op heads** and
-      **Publish**. Check that nothing in the implementation changed their meaning.
+- [ ] [GLOSSARY.md](../../GLOSSARY.md): already has **Cloud workspace**, **Workspace name**,
+      **Repo directory**, **Op heads** and **Publish**. Check that nothing in the implementation
+      changed their meaning.
 - [ ] Mark M2 and this plan done in the [roadmap](mvp-impl-roadmap.md).
 
 ## Open questions
