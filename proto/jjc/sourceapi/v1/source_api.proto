@@ -16,3 +16,14 @@ service Objects {}
 service OpHeads {}
 
 service Trunk {}
+
+// The kind of a stored object. The header word of its ID hash is the lowercase name without the
+// prefix, e.g. "commit".
+enum ObjectKind {
+  OBJECT_KIND_UNSPECIFIED = 0;
+  OBJECT_KIND_COMMIT = 1;
+  OBJECT_KIND_TREE = 2;
+  OBJECT_KIND_BLOB = 3;
+  OBJECT_KIND_OPERATION = 4;
+  OBJECT_KIND_VIEW = 5;
+}

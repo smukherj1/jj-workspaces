@@ -10,6 +10,7 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
+	sync "sync"
 	unsafe "unsafe"
 )
 
@@ -20,18 +21,101 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// The kind of a stored object. The header word of its ID hash is the lowercase name without the
+// prefix, e.g. "commit".
+type ObjectKind int32
+
+const (
+	ObjectKind_OBJECT_KIND_UNSPECIFIED ObjectKind = 0
+	ObjectKind_OBJECT_KIND_COMMIT      ObjectKind = 1
+	ObjectKind_OBJECT_KIND_TREE        ObjectKind = 2
+	ObjectKind_OBJECT_KIND_BLOB        ObjectKind = 3
+	ObjectKind_OBJECT_KIND_OPERATION   ObjectKind = 4
+	ObjectKind_OBJECT_KIND_VIEW        ObjectKind = 5
+)
+
+// Enum value maps for ObjectKind.
+var (
+	ObjectKind_name = map[int32]string{
+		0: "OBJECT_KIND_UNSPECIFIED",
+		1: "OBJECT_KIND_COMMIT",
+		2: "OBJECT_KIND_TREE",
+		3: "OBJECT_KIND_BLOB",
+		4: "OBJECT_KIND_OPERATION",
+		5: "OBJECT_KIND_VIEW",
+	}
+	ObjectKind_value = map[string]int32{
+		"OBJECT_KIND_UNSPECIFIED": 0,
+		"OBJECT_KIND_COMMIT":      1,
+		"OBJECT_KIND_TREE":        2,
+		"OBJECT_KIND_BLOB":        3,
+		"OBJECT_KIND_OPERATION":   4,
+		"OBJECT_KIND_VIEW":        5,
+	}
+)
+
+func (x ObjectKind) Enum() *ObjectKind {
+	p := new(ObjectKind)
+	*p = x
+	return p
+}
+
+func (x ObjectKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ObjectKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_jjc_sourceapi_v1_source_api_proto_enumTypes[0].Descriptor()
+}
+
+func (ObjectKind) Type() protoreflect.EnumType {
+	return &file_jjc_sourceapi_v1_source_api_proto_enumTypes[0]
+}
+
+func (x ObjectKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ObjectKind.Descriptor instead.
+func (ObjectKind) EnumDescriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{0}
+}
+
 var File_jjc_sourceapi_v1_source_api_proto protoreflect.FileDescriptor
 
 const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\n" +
-	"!jjc/sourceapi/v1/source_api.proto\x12\x10jjc.sourceapi.v12\x06\n" +
+	"!jjc/sourceapi/v1/source_api.proto\x12\x10jjc.sourceapi.v1*\x9e\x01\n" +
+	"\n" +
+	"ObjectKind\x12\x1b\n" +
+	"\x17OBJECT_KIND_UNSPECIFIED\x10\x00\x12\x16\n" +
+	"\x12OBJECT_KIND_COMMIT\x10\x01\x12\x14\n" +
+	"\x10OBJECT_KIND_TREE\x10\x02\x12\x14\n" +
+	"\x10OBJECT_KIND_BLOB\x10\x03\x12\x19\n" +
+	"\x15OBJECT_KIND_OPERATION\x10\x04\x12\x14\n" +
+	"\x10OBJECT_KIND_VIEW\x10\x052\x06\n" +
 	"\x04Repo2\v\n" +
 	"\tWorkspace2\t\n" +
 	"\aObjects2\t\n" +
 	"\aOpHeads2\a\n" +
 	"\x05TrunkBHZFgithub.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1;sourceapiv1b\x06proto3"
 
-var file_jjc_sourceapi_v1_source_api_proto_goTypes = []any{}
+var (
+	file_jjc_sourceapi_v1_source_api_proto_rawDescOnce sync.Once
+	file_jjc_sourceapi_v1_source_api_proto_rawDescData []byte
+)
+
+func file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP() []byte {
+	file_jjc_sourceapi_v1_source_api_proto_rawDescOnce.Do(func() {
+		file_jjc_sourceapi_v1_source_api_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_jjc_sourceapi_v1_source_api_proto_rawDesc), len(file_jjc_sourceapi_v1_source_api_proto_rawDesc)))
+	})
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescData
+}
+
+var file_jjc_sourceapi_v1_source_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_jjc_sourceapi_v1_source_api_proto_goTypes = []any{
+	(ObjectKind)(0), // 0: jjc.sourceapi.v1.ObjectKind
+}
 var file_jjc_sourceapi_v1_source_api_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
 	0, // [0:0] is the sub-list for method input_type
@@ -50,13 +134,14 @@ func file_jjc_sourceapi_v1_source_api_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jjc_sourceapi_v1_source_api_proto_rawDesc), len(file_jjc_sourceapi_v1_source_api_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   0,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
 		GoTypes:           file_jjc_sourceapi_v1_source_api_proto_goTypes,
 		DependencyIndexes: file_jjc_sourceapi_v1_source_api_proto_depIdxs,
+		EnumInfos:         file_jjc_sourceapi_v1_source_api_proto_enumTypes,
 	}.Build()
 	File_jjc_sourceapi_v1_source_api_proto = out.File
 	file_jjc_sourceapi_v1_source_api_proto_goTypes = nil

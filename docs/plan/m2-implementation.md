@@ -5,7 +5,7 @@ that read and rewrite history work through the stack, with no files checked out.
 [DESIGN.md](../spec/DESIGN.md) for the overall design and
 [m1-implementation.md](m1-implementation.md) for the skeleton this builds on.
 
-**Status:** Not started.
+**Status:** In progress.
 
 ## Outcome
 
@@ -126,8 +126,9 @@ eviction and cleanup of objects left by failed publishes (M7).
 - **Schema:** no migrations in the MVP. A binary creates its schema in an empty database and records
   its schema version in `PRAGMA user_version`. If an existing database has another version, it
   refuses to start with
-  `<data-dir> has schema v<n>, this <binary> needs v<m>; delete <data-dir> to start over`. It never
-  wipes data itself, because the daemon's data dir holds objects not yet uploaded.
+  `schema version mismatch: <data-dir> has schema v<n>, this <binary> needs v<m>; delete <data-dir> to start over`.
+  A database with tables but no version is refused the same way, as v0. It never wipes data itself,
+  because the daemon's data dir holds objects not yet uploaded.
 - **Service:** `--data-dir` is required. Object content goes in `<data-dir>/objects/`, and `meta.db`
   has these tables:
   - `objects(id PK, kind, size, sha256, uploaded_at)`, with `sha256` set for blobs only.
@@ -219,36 +220,39 @@ e2e/tests/repo.rs                 happy path
 e2e/tests/repo_errors.rs          CLI unhappy paths against the real daemon and service
 ```
 
-## 1. Go object and metadata packages
+## 1. Go object and metadata packages (done)
 
 Outcome: one Go implementation of object IDs and parsing, and of opening `meta.db`, shared by the
 service and the daemon.
 
-- [ ] `lib-go/obj`:
+- [x] `lib-go/obj`:
   - `type Kind` (`Commit`, `Tree`, `Blob`, `Operation`, `View`), `String()` giving the header word,
-    and conversion to and from the proto `ObjectKind`.
+    and conversion to and from the proto `ObjectKind`, which this section adds to
+    `source_api.proto`.
   - `type ID [20]byte` with `Hex()`, `ParseHex` and `RootID` (all zeros).
-  - `Hash(kind, content) ID`: sha1dc (`github.com/pjbgf/sha1cd`) over the header plus content.
-    Returns an error when a collision attack is detected.
+  - `Hash(kind, content) (ID, error)`: sha1dc (`github.com/pjbgf/sha1cd`) over the header plus
+    content. Returns `ErrCollision` when a collision attack is detected.
   - `BlobMeta(content) (size uint64, sha256 [32]byte)`: the size and SHA-256 of a blob's content
     (the file bytes, without the header), which the service stores in the `objects` table.
-- [ ] `lib-go/objstore`: `Open(dir)`, `Put(id, kind, content)` (atomic, idempotent),
+- [x] `lib-go/objstore`: `Open(dir)`, `Put(id, kind, content)` (atomic, idempotent),
       `Get(id) (kind, content, error)`, `Has(id)`, `Size(id)`, `Remove(id)`, `MoveTo(other, id)`
       (rename into another directory on the same filesystem) and `List()`. It doesn't hash; callers
       verify.
-- [ ] `lib-go/metadb`: `Open(path, binary, version, schema) (*sql.DB, error)` applies the
+- [x] `lib-go/metadb`: `Open(path, binary, version, schema) (*sql.DB, error)` applies the
       [SQLite settings](#storage-on-disk), creates the schema in an empty database and sets
-      `user_version`, and fails with the schema version error on a mismatch. Adds the
-      `modernc.org/sqlite` dependency.
+      `user_version`, and fails with `ErrSchemaVersionMismatch` on a mismatch. Adds the
+      `modernc.org/sqlite` dependency, pinned to v1.50.0 because later versions need Go 1.26.
 
 Tests:
 
-- [ ] Unit: `Hash` matches Git for the empty blob (`e69de29…`), the empty tree (`4b825dc…`) and a
-      sample commit, and reports the SHAttered collision PDF as an attack.
-- [ ] Unit: `objstore` round trip, idempotent `Put`, `MoveTo`, `List`, and no partial file left when
-      a write fails.
-- [ ] Unit: `metadb.Open` creates the schema once, reopens it, and fails with the schema version
-      error, naming the data dir, when the version differs.
+- [x] Unit: `Hash` matches Git for the empty blob (`e69de29…`), the empty tree (`4b825dc…`) and a
+      sample commit. The collision-detecting hash reports the SHAttered PDF (its first 1 KiB) as an
+      attack. Hashed as a blob it isn't one, because the Git header shifts the collision blocks, so
+      the test checks `Hash` gives Git's ID for it.
+- [x] Unit: `objstore` object lifecycle for each kind, idempotent `Put`, `MoveTo`, `List`, and no
+      partial file left when a write fails.
+- [x] Unit: `metadb.Open` creates the schema once, reopens it, and fails with
+      `metadb.ErrSchemaVersionMismatch` when the version differs or a non-empty database has none.
 
 ## 2. Service object storage
 
