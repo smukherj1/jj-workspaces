@@ -122,6 +122,10 @@ files.
 | R11 | Workspaces are independent: commands in one workspace, including `undo` and `op restore`, never change another workspace's history, whether or not the same user owns it | P0       |
 | R12 | Trunk only moves forward: a push that would remove a commit from trunk is rejected by the source API                                                                     | P0       |
 
+In v1, "repo size" in R1 means the size of the tree. Workspace creation also grows with history
+length, which v1 assumes stays at O(100s) of commits; the [custom commit index](commit-index.md)
+removes that cost.
+
 ## 7. Success Metrics
 
 - p50 workspace creation < 2 s and p95 < 5 s on the target codebase.
@@ -153,6 +157,6 @@ files.
   bookmarks, or to stack one of your own features on another.
 - Recovering edits that were never snapshotted on a machine a workspace was moved away from.
 - Presubmit CI that tests a user's unpushed commits applied on top of a trunk commit.
-- Server-side or lazily built commit index for revset evaluation (`jj log`) on large histories. In
-  v1, jj-lib builds each workspace's full index locally from the commit graph when the workspace is
+- A [custom commit index](commit-index.md) for large histories, with trunk indexed on the server and
+  walked on demand. In v1, jj-lib builds each workspace's full index locally when the workspace is
   created.

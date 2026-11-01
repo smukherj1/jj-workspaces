@@ -77,7 +77,9 @@ the commit encoding below, are checked against each new version before upgrading
      does.
   2. Calls `Trunk.PushTrunk`. If the commit doesn't descend from trunk, it fails with
      `<commit> doesn't descend from trunk (<trunk>)` and the hint
-     `run jjc cloud fetch, rebase onto trunk() and push again`.
+     `run jjc cloud fetch, rebase onto trunk() and push again`. If the service rejects a duplicate
+     change ID, it shows the service's error, which names the change and the trunk commit holding
+     it.
   3. Publishes an operation that sets `main@origin` to the commit. If the command dies before this,
      the push has still happened, and running it again or fetching records it. Pushing the current
      trunk commit again succeeds without changing trunk.
@@ -103,13 +105,13 @@ the commit encoding below, are checked against each new version before upgrading
 
 ## Commit index
 
-- The index lives in the workspace's repo directory that the daemon sets up (see
-  [srcd.md](srcd.md#workspace)). Each workspace has its own, built in full when the workspace is
-  created and updated incrementally after that. Nothing in it is shared with other workspaces, so
-  nothing needs coordinating.
-- Before building or updating the index, the CLI calls `Store.FetchCommitGraph(view heads)`.
-  jj-lib's stock index builder then runs against the daemon's cache with no per-commit network round
-  trips.
+- The index is jj-lib's stock `DefaultIndexStore`, in the workspace's repo directory that the daemon
+  sets up (see [srcd.md](srcd.md#workspace)). Each workspace has its own, built in full when the
+  workspace is created and updated incrementally after that. Nothing in it is shared with other
+  workspaces, so nothing needs coordinating.
+- The builder reads each commit through `Backend::read_commit`, one daemon call each, served from
+  the daemon's cache after the first read. This is fine at v1's O(100s) of commits; larger histories
+  need the [custom commit index](commit-index.md).
 
 ## Working copy
 

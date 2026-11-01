@@ -56,15 +56,14 @@ front; each RPC is added in the milestone that first needs it.
 
 ### Objects
 
-| RPC                                                                   | Behavior                                                                                                                                                                           |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GetObjects(ids[])`                                                   | Batch fetch small objects (commits, trees, small blobs, operations, views) in one response; returns a `too_large(size)` marker instead of content for blobs over the message limit |
-| `DownloadObject(id) → chunks` (server-streaming)                      | Download one large blob that doesn't fit in a single message                                                                                                                       |
-| `GetCommitGraph(heads[], known_heads[]) → commits` (server-streaming) | Stream every commit object reachable from `heads` but not from `known_heads`, whole                                                                                                |
-| `GetTreeRecursive(tree_id, path, depth)`                              | Fetch a subtree's tree objects without blobs, with each blob's `(size, SHA-256)`                                                                                                   |
-| `HasObjects(ids[]) → missing[]`                                       | Dedup before upload                                                                                                                                                                |
-| `PutObjects(objects[])`                                               | Upload a batch of small objects (commits, trees, small blobs, operations, views) in one request                                                                                    |
-| `UploadObject(chunks)` (client-streaming)                             | Upload one large blob that doesn't fit in a single message                                                                                                                         |
+| RPC                                              | Behavior                                                                                                                                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GetObjects(ids[])`                              | Batch fetch small objects (commits, trees, small blobs, operations, views) in one response; returns a `too_large(size)` marker instead of content for blobs over the message limit |
+| `DownloadObject(id) → chunks` (server-streaming) | Download one large blob that doesn't fit in a single message                                                                                                                       |
+| `GetTreeRecursive(tree_id, path, depth)`         | Fetch a subtree's tree objects without blobs, with each blob's `(size, SHA-256)`                                                                                                   |
+| `HasObjects(ids[]) → missing[]`                  | Dedup before upload                                                                                                                                                                |
+| `PutObjects(objects[])`                          | Upload a batch of small objects (commits, trees, small blobs, operations, views) in one request                                                                                    |
+| `UploadObject(chunks)` (client-streaming)        | Upload one large blob that doesn't fit in a single message                                                                                                                         |
 
 ### OpHeads
 
@@ -75,10 +74,10 @@ front; each RPC is added in the milestone that first needs it.
 
 ### Trunk
 
-| RPC                                        | Behavior                                                                                                                                        |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GetTrunk(repo) → commit`                  | Return the current trunk commit                                                                                                                 |
-| `PushTrunk(repo, user, workspace, commit)` | Atomically move trunk to `commit` if it descends from the current trunk, and append to the push log; otherwise reject with `FailedPrecondition` |
+| RPC                                        | Behavior                                                                                                                                                                                            |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GetTrunk(repo) → commit`                  | Return the current trunk commit                                                                                                                                                                     |
+| `PushTrunk(repo, user, workspace, commit)` | Atomically move trunk to `commit` if it descends from the current trunk and no newly pushed commit reuses a trunk change ID, and append to the push log; otherwise reject with `FailedPrecondition` |
 
 ### Behavior
 
@@ -95,13 +94,16 @@ front; each RPC is added in the milestone that first needs it.
 - **`PushTrunk`** is the only way trunk moves, and the fast-forward check is the whole enforcement
   of trunk immutability (R12). Pushing the current trunk commit succeeds without changing anything
   or logging, so a retry after a lost reply is safe. It needs `commit` and its ancestry stored, and
-  walks ancestry with the same generation numbers as `GetCommitGraph`. Pushes to one repo are
-  serialized, so of two concurrent pushes from the same trunk, the second is rejected unless it
-  descends from the first. The service checks nothing about jj semantics (conflicts, descriptions);
-  the CLI does.
-- **`GetCommitGraph`** sends commits whole rather than an index. Commits are a few hundred bytes
-  each, so tens of MB at most for 100k commits, and the service stays independent of jj-lib's index
-  format.
+  walks only the newly pushed commits, from `commit` back to the current trunk. Pushes to one repo
+  are serialized, so of two concurrent pushes from the same trunk, the second is rejected unless it
+  descends from the first.
+- **Trunk change IDs:** the service reads the `change-id` header of each newly pushed commit and
+  rejects the push if it matches another commit on trunk or another commit in the same push, naming
+  the change and the commit holding it. A per-repo table from change ID to trunk commit, updated
+  atomically with trunk, keeps this O(pushed commits). Only trunk commits claim change IDs, and the
+  root commit is excluded. This is the only jj data the service reads; it checks nothing else about
+  jj semantics (conflicts, descriptions), which the CLI does. The table is the seed of the future
+  [custom commit index](commit-index.md).
 
 ## Not in v1
 

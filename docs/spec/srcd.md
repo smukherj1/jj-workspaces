@@ -33,7 +33,7 @@ shim. The services are declared up front; each RPC is added in the milestone tha
 
 | Service       | RPCs                                                                                                                                                                                                    | Backs jj-lib trait                  |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `Store`       | `Read/Write{Commit,Tree,File,Symlink}`, `GetCopyRecords`, `FetchCommitGraph(heads[])`                                                                                                                   | `Backend`, index build              |
+| `Store`       | `Read/Write{Commit,Tree,File,Symlink}`, `GetCopyRecords`                                                                                                                                                | `Backend`                           |
 | `OpStore`     | `Read/Write{Operation,View}`, `ResolveOpIdPrefix`                                                                                                                                                       | `OpStore`                           |
 | `OpHeads`     | `GetOpHeads(repo, user, ws)`, `UpdateOpHeads(repo, user, ws, old[], new)`                                                                                                                               | `OpHeadsStore`                      |
 | `Trunk`       | `GetTrunk(repo)`, `PushTrunk(repo, user, ws, commit)`                                                                                                                                                   | `jjc cloud fetch` / `push`, CI      |
@@ -58,11 +58,8 @@ shim. The services are declared up front; each RPC is added in the milestone tha
 - **`Write*`** take raw serialized object bytes. The daemon computes the ID (SHA-1 with sha1dc, plus
   `(size, SHA-256)` for blobs), writes the object to the primary store (fsync'd), starts uploading
   it in the background, deduplicating with `HasObjects`, and returns the ID.
-- **`Read*`** are served from local storage, fetching from the service on a miss.
-- **`FetchCommitGraph(heads)`** makes sure every commit reachable from `heads` is in the cache, in
-  bulk, so jj-lib's index builder never makes one round trip per generation. It calls
-  `GetCommitGraph(heads, known_heads)`, passing the heads whose full ancestry is already cached, and
-  writes the streamed commits into the cache.
+- **`Read*`** are served from local storage, fetching from the service on a miss. There is no bulk
+  commit-graph fetch: v1 histories are small (see [commit-index.md](commit-index.md)).
 
 ### OpHeads
 

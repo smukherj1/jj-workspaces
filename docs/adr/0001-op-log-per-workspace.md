@@ -25,7 +25,7 @@ work done in another workspace on another machine.
   `(repo, user)`, and op heads of an unknown workspace are an error, not a fresh op log.
 - Each View has one workspace, so stock `jj workspace add`, `forget` and `rename` are blocked.
 - jj-lib gives a repo directory one op-heads store, so each workspace has its own repo directory and
-  commit index. A new workspace builds its index of trunk history from scratch, which M4 measures
-  against R1.
+  commit index. A new workspace builds its index of trunk history from scratch, which is fine for
+  v1's small histories; the future [custom commit index](../spec/commit-index.md) removes the cost.
 - A workspace has one working copy, so it's open on one machine at a time, and moving it takes the
   hold from the previous machine.

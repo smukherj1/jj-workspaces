@@ -38,7 +38,9 @@ jjc ──gRPC/UDS──▶ srcd ──gRPC/HTTP2──▶ source-api
 
 jj semantics (conflict materialization, ignore rules, change IDs, merging concurrent operations)
 stay in the CLI, where jj-lib is available. The daemon and the service (Go) only store bytes, Git
-trees and dirty paths, and never need to understand jj.
+trees and dirty paths, and never need to understand jj. The one exception is the service reading the
+change IDs of commits pushed to trunk, to keep them unique there (see
+[Trunk and push](#trunk-and-push)).
 
 ## Interfaces
 
@@ -79,11 +81,11 @@ trees and dirty paths, and never need to understand jj.
   anyone can claim another user's email.
 - **`jj undo` / `jj op restore`** keep stock jj semantics and affect only the workspace's own op log
   (R11).
-- **History** is expected to stay under 100k commits, so every workspace builds the full commit
-  index locally, when it is created, from commits streamed in bulk from the service, and updates it
-  incrementally after that. Each workspace has its own repo directory and index, because jj-lib
-  gives a repo directory exactly one op-heads store. There is no shallow history, no lazy index and
-  no server-side index.
+- **History** is expected to stay at O(100s) of commits in v1, so every workspace builds jj-lib's
+  stock commit index in full when it is created, reading each commit through the daemon, and updates
+  it incrementally after that. Neither the daemon nor the service has index-specific support. Each
+  workspace has its own repo directory and index, because jj-lib gives a repo directory exactly one
+  op-heads store. Larger histories need a [custom commit index](commit-index.md).
 - **Sparse patterns** are not supported in v1. The working copy always contains every path.
 
 ## Trunk and push
@@ -107,7 +109,13 @@ trees and dirty paths, and never need to understand jj.
      no-op, so retries are safe. Anything else is rejected, and the user fetches, rebases and pushes
      again. This fast-forward rule is the whole enforcement of trunk immutability (R12): nothing can
      move trunk backwards or sideways.
-  4. The CLI publishes an operation that sets `main@origin` to the pushed commit.
+  4. The service also rejects the push if a newly pushed commit has the change ID of another commit
+     on trunk or in the same push, so a change can never become divergent on trunk, where it could
+     never be fixed. It keeps a table from each trunk change ID to its commit, updated atomically
+     with trunk, so the check costs O(pushed commits), not O(trunk). Only commits on trunk claim a
+     change ID, so other workspaces' private commits never block a push. The root commit is
+     excluded.
+  5. The CLI publishes an operation that sets `main@origin` to the pushed commit.
 - **Fetch** (`jjc cloud fetch`) reads trunk with `GetTrunk` and publishes one operation setting
   `main@origin` to it, or nothing if it hasn't moved. It never rebases bookmarks or changes, as
   `jj git fetch` doesn't.
@@ -123,9 +131,9 @@ trees and dirty paths, and never need to understand jj.
   [jjc.md](jjc.md#object-encoding)). Operations and views are stored in the same object store.
 - **`tree_id`** is the Git object ID of a plain root tree. It is neither a commit ID nor a change
   ID: a jj commit points to its root tree, and many commits can share one. Change IDs live inside
-  the commit object, so the daemon and the service never look at them. A jj tree with conflicts is a
-  set of several tree IDs, so the working copy always serves one plain tree: the CLI materializes
-  conflicts into it before calling `Checkout`.
+  the commit object. The daemon never looks at them, and the service reads them only on push. A jj
+  tree with conflicts is a set of several tree IDs, so the working copy always serves one plain
+  tree: the CLI materializes conflicts into it before calling `Checkout`.
 - **Writing:** the CLI serializes objects and the daemon hashes them and returns the ID, so there is
   one hashing implementation. The service re-hashes every upload and rejects any object whose ID
   doesn't match.
@@ -175,8 +183,8 @@ trees and dirty paths, and never need to understand jj.
   heads, as read-only remote bookmarks (e.g. `feature@alice/fix-login`), so users can review or
   build on each other's work, or stack on their own work from another workspace, without merging op
   logs.
-- **Index seeding or a lazy index**, if building a new workspace's full index is too slow for R1 (an
-  M4 open question in the [roadmap](../plan/mvp-impl-roadmap.md)).
+- **[Custom commit index](commit-index.md)** for large histories: the service indexes trunk, the CLI
+  indexes only the workspace's private commits, and trunk is walked on demand.
 - **Async publish and watched op heads**, if round-trip latency or network blips hurt (e.g.
   developers over VPN):
   - Writes: `UpdateOpHeads` returns once the new operation is fsync'd locally, and a persisted queue

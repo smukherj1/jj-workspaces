@@ -54,28 +54,28 @@ Prerequisite: the [re-brand](re-brand.md) to JJ Cloud Source, done before M2 sta
 
 jj commands that read and rewrite history work through the stack, with no files checked out.
 
-1. **Service:** creates an empty repo, stores verified objects with blob metadata, serves batch and
-   streaming object fetch and upload, and streams the commit graph. It keeps a registry of
-   workspaces, named per user and repo, and op heads per workspace with atomic updates. A new
-   workspace starts at the root operation, op heads of an unknown workspace are `NotFound`, and
-   workspaces never see each other's op heads.
+1. **Service:** creates an empty repo, stores verified objects with blob metadata, and serves batch
+   and streaming object fetch and upload. It keeps a registry of workspaces, named per user and
+   repo, and op heads per workspace with atomic updates. A new workspace starts at the root
+   operation, op heads of an unknown workspace are `NotFound`, and workspaces never see each other's
+   op heads.
 2. **Daemon:** `Store`, `OpStore` and `OpHeads` work, with op heads named by repo, user and
    workspace, and workspace creation is forwarded. Written objects are hashed, persisted and
-   uploaded in the background. Reads come from local storage, with a fetch on a miss. The commit
-   graph is fetched in bulk. An operation is published only once every object it references is on
-   the service.
+   uploaded in the background. Reads come from local storage, with a fetch on a miss. An operation
+   is published only once every object it references is on the service.
 3. **CLI:** `jjc` registers its `cloud` store factories: backend, op store and op heads shims using
    the pinned jj version's commit encoding. Stock repo creation (`git init`, `git clone`,
-   `debug init-simple`) stays blocked. The commit index is built from the bulk-fetched commit graph.
-   The default `trunk()` alias is in place. The user is jj's `user.email`. `jjc cloud repo create`
-   creates a repo on the service, and `jjc cloud workspace create` registers a named workspace for
-   the user and sets up its repo directory in an ordinary directory, with no working copy and `@` on
-   the root commit. `jjc cloud workspace list` and `delete` manage the user's workspaces on the
-   service. Later commands there fail clearly if `user.email` changes. There, `jj new`, `describe`,
-   `rebase`, `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock `jj workspace add`,
-   `forget` and `rename` fail. Concurrent operations, run with the same `--at-op`, merge on the next
-   command. A second workspace of the same user starts from the root commit and sees none of the
-   first workspace's operations or commits.
+   `debug init-simple`) stays blocked. The commit index is jj-lib's stock index, built by reading
+   each commit through the daemon, since v1 histories are O(100s) of commits. The default `trunk()`
+   alias is in place. The user is jj's `user.email`. `jjc cloud repo create` creates a repo on the
+   service, and `jjc cloud workspace create` registers a named workspace for the user and sets up
+   its repo directory in an ordinary directory, with no working copy and `@` on the root commit.
+   `jjc cloud workspace list` and `delete` manage the user's workspaces on the service. Later
+   commands there fail clearly if `user.email` changes. There, `jj new`, `describe`, `rebase`,
+   `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock `jj workspace add`, `forget`
+   and `rename` fail. Concurrent operations, run with the same `--at-op`, merge on the next command.
+   A second workspace of the same user starts from the root commit and sees none of the first
+   workspace's operations or commits.
 
 See [m2-implementation.md](m2-implementation.md) for detailed implementation plan.
 
@@ -86,7 +86,9 @@ work by pushing it to trunk, which only moves forward. There is still no working
 
 1. **Service:** keeps one trunk per repo, starting at the root commit. Trunk is read in one call and
    moves only by a push of a commit that descends from it, so concurrent pushes from the same trunk
-   can't both succeed. Every push is appended to a push log.
+   can't both succeed. A push is also rejected if a newly pushed commit reuses the change ID of a
+   commit on trunk or in the same push, checked in O(pushed commits). Every push is appended to a
+   push log.
 2. **Daemon:** forwards trunk reads, and forwards a push only once every object written before it is
    on the service.
 3. **CLI:** `jjc cloud workspace create` starts a new workspace's `@` on the current trunk.
@@ -95,9 +97,10 @@ work by pushing it to trunk, which only moves forward. There is still no working
    repo and a workspace and pushes a commit. User B creates a workspace in the repo, starts on that
    commit, and sees none of A's unpushed work or operations. B's push from a stale trunk is
    rejected, and succeeds after a fetch and rebase. B's `jj undo` never changes A's history, and
-   undoing a push doesn't move trunk. A's second workspace sees A's pushed work but not A's unpushed
-   work, and `jj undo` in one of A's workspaces never changes the other. Two jj processes in one
-   workspace publish concurrent operations that merge on the next command.
+   undoing a push doesn't move trunk. A push that would make a change divergent on trunk is
+   rejected, naming the change. A's second workspace sees A's pushed work but not A's unpushed work,
+   and `jj undo` in one of A's workspaces never changes the other. Two jj processes in one workspace
+   publish concurrent operations that merge on the next command.
 
 ### M4: Workspaces with lazy, read-only checkout
 
@@ -118,16 +121,6 @@ fetched only when read. The mount is read-only.
    `jj edit`. The user opens the workspace on a second machine and sees its history there, and the
    first machine's next command fails with `workspace <name> is open on <host>`. A first benchmark
    measures workspace creation, checkout time and cached read latency (R1, R4).
-
-Open questions:
-
-- **Cold workspace creation at 100k commits** (before sub-milestone 3). Each workspace builds its
-  full commit index when it's created, and jj-lib reads every commit through `Backend::read_commit`,
-  one daemon RPC each. Measure creation against R1. Mitigations, in order: raise the backend's
-  `concurrency()` so reads pipeline; have `FetchCommitGraph` return the commits to the CLI so the
-  build reads them from memory; seed the new workspace's index by hard-linking segments from another
-  of the same user's workspaces of the repo on the machine, which makes that workspace's private
-  commit IDs resolvable in the new one.
 
 ### M5: Local edits and snapshots
 
@@ -173,4 +166,6 @@ Open questions:
   workspace's whole op log one object at a time. Options: a bulk op-log fetch RPC, or the service
   walking operation parents.
 - **Loading the target codebase** (before sub-milestone 3). The design has no bulk import.
-  Committing the tree through a workspace may be enough.
+  Committing the tree through a workspace may be enough. v1 assumes O(100s) of commits, so the
+  codebase is imported with little or no history; larger histories need the
+  [custom commit index](../spec/commit-index.md).

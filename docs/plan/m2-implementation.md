@@ -24,8 +24,8 @@ that read and rewrite history work through the stack, with no files checked out.
   same user's, a new workspace starts at the root operation, and op heads of an unknown workspace
   are `NotFound`.
 - The service stores verified objects and op heads on local disk. The daemon persists written
-  objects, uploads them in the background, caches reads, fetches the commit graph in bulk, and
-  publishes an operation only once every object written before it is on the service.
+  objects, uploads them in the background, caches reads, and publishes an operation only once every
+  object written before it is on the service.
 
 Not in M2: trunk, `jjc cloud fetch` and `jjc cloud push`, and starting a new workspace on trunk
 (M3); opening a workspace on another machine, the holder token, and moving repo directories to the
@@ -100,33 +100,16 @@ eviction and cleanup of objects left by failed publishes (M7).
   considers the root op ID. A full-length ID is looked up directly.
 - **Op-log round trips:** one round trip per op or View missing from the cache. Bulk fetch is an M7
   open question.
-- **Bulk commit-graph fetch:** `jjc` registers a `cloud` index store that wraps jj's
-  `DefaultIndexStore`. In `get_index_at_op` for an op that isn't indexed yet:
-  1. It walks back the op log as `build_index_at_operation` does, stopping at the first op with an
-     `index/op_links/<op id>` marker. This depends on jj's internal index layout, checked on every
-     jj upgrade.
-  2. It collects every commit ID those ops and their Views reference, hidden commits included,
-     because the builder indexes them all. The root commit ID is dropped.
-  3. It calls `Store.FetchCommitGraph` once with them, then hands off to the default store.
-- **Complete heads (daemon):** a persisted set of commits whose whole ancestry is cached.
-  - `FetchCommitGraph` skips requested IDs already in the set. If none remain, it makes no call.
-  - After a successful fetch, the requested IDs join the set. A commit the daemon writes joins it if
-    it has no parents or all its parents are in the set.
-  - When a commit joins the set, its parents leave it.
-  - At most the 1000 most recently added entries are sent as `known_heads`. Hidden commits stay in
-    the set as heads, so it grows with rewrites. Sending fewer heads only means re-sending some
-    commits.
-- **`GetCommitGraph`:** returns exactly "reachable from `heads`, not from `known_heads`". It walks
-  both sides in one priority queue ordered by generation number and stops when only excluded commits
-  remain. A commit's generation (no parents: 1, else 1 + max over parents) is computed on first need
-  and stored. Commits can be uploaded before their parents, so it can't be computed on upload.
+- **Commit index:** jj-lib's stock `DefaultIndexStore`, reading each commit through
+  `Backend::read_commit`. v1 histories are O(100s) of commits, so there's no bulk commit-graph fetch
+  (see [commit-index.md](../spec/commit-index.md)).
 
 ### Sizes
 
 - Any object over 1 MiB, of any kind, goes through `DownloadObject` and `UploadObject` in 1 MiB
   chunks. `GetObjects` returns `too_large(size)` for it.
-- A batch (`GetObjects`, `PutObjects`, `GetCommitGraph` stream messages) carries at most 4 MiB of
-  content. The service, the daemon and the CLI's client all accept messages up to 8 MiB.
+- A batch (`GetObjects`, `PutObjects`) carries at most 4 MiB of content. The service, the daemon and
+  the CLI's client all accept messages up to 8 MiB.
 - The daemon's `ReadFile` and `WriteFile` stream to and from the CLI in 1 MiB chunks. Other `Store`
   and `OpStore` RPCs are unary.
 
@@ -135,8 +118,8 @@ eviction and cleanup of objects left by failed publishes (M7).
 - **Object layout** (service and daemon): `objects/<2 hex>/<38 hex>`, stored as the Git header plus
   content, uncompressed. Writes go to a temp file, fsync, rename.
 - **Service:** `--data-dir` is required.
-  - Objects go in `<data-dir>/objects/`. A sidecar `<object>.meta` holds the upload time,
-    `(size, SHA-256)` for blobs, and the generation for commits once computed.
+  - Objects go in `<data-dir>/objects/`. A sidecar `<object>.meta` holds the upload time and
+    `(size, SHA-256)` for blobs.
   - A repo is the directory `<data-dir>/repos/<repo>/`. A workspace is the directory
     `<data-dir>/repos/<repo>/workspaces/<user>/<name>/`, with the email percent-encoded (everything
     outside `[A-Za-z0-9._@-]`). Its `op_heads` file holds one hex ID per line, rewritten atomically
@@ -150,7 +133,6 @@ eviction and cleanup of objects left by failed publishes (M7).
     left.
   - `cache/objects/`: confirmed or fetched objects. No eviction until M7.
   - `repos/<name>/op_ids`: append-only list of known op IDs, for prefix resolution.
-  - `complete_heads`: the complete-heads set, rewritten atomically.
   - The daemon re-hashes fetched objects before caching them. It computes no blob metadata until M4.
 
 ### CLI
@@ -159,9 +141,9 @@ eviction and cleanup of objects left by failed publishes (M7).
   default as `jj git clone` names its destination. With no working copy yet, it's where the user
   runs `jj`, so it isn't in a daemon-managed location; M4 moves it there. Each workspace has its own
   repo directory and commit index. Its `.jj/repo` has `store` (`cloud`), `workspace_store` (stock
-  `simple`), `op_store` and `op_heads` (`cloud`, each holding a `repo_name` file), `index` (`cloud`)
-  and `submodule_store` (stock). `op_heads` also holds `user_email` and `workspace_name` files,
-  written by its initializer.
+  `simple`), `op_store` and `op_heads` (`cloud`, each holding a `repo_name` file), `index` (stock
+  `default`) and `submodule_store` (stock). `op_heads` also holds `user_email` and `workspace_name`
+  files, written by its initializer.
 - **User check:** the `cloud` op-heads store loader compares `user_email` with `user.email` from the
   settings it's given. A mismatch fails with
   `this repo directory belongs to <old>; user.email is <new>` and the hint
@@ -194,18 +176,17 @@ proto/jjc/srcd/v1/srcd.proto              Store, OpStore, OpHeads, Repo, Workspa
 lib-go/gitobj/                    kinds, sha1dc IDs, commit parent parsing, blob metadata
 lib-go/objstore/                  on-disk content-addressed object directory (service and daemon)
 lib-go/sourceapi/storage/         Storage interface and its file implementation
-lib-go/sourceapi/                 RPC handlers: objects.go, repos.go, workspaces.go, commitgraph.go
-lib-go/srcd/localstore/           primary store, cache, complete heads, op ID lists
+lib-go/sourceapi/                 RPC handlers: objects.go, repos.go, workspaces.go
+lib-go/srcd/localstore/           primary store, cache, op ID lists
 lib-go/srcd/uploader/             background uploader and publish barrier
-lib-go/srcd/sourceapiclient/      batched and chunked object calls, op heads, commit graph
+lib-go/srcd/sourceapiclient/      batched and chunked object calls, op heads
 lib-go/srcd/                      handlers: store.go, opstore.go, opheads.go, workspace.go
-bin-rs/jjc/src/store.rs           StoreFactories for the cloud backend, op store, op heads, index
+bin-rs/jjc/src/store.rs           StoreFactories for the cloud backend, op store, op heads
 bin-rs/jjc/src/store/backend.rs
 bin-rs/jjc/src/store/git_encoding.rs     commit and tree encoding, copied from git_backend.rs
 bin-rs/jjc/src/store/op_store.rs
 bin-rs/jjc/src/store/op_proto.rs         op and view conversion, copied from simple_op_store.rs
 bin-rs/jjc/src/store/op_heads_store.rs
-bin-rs/jjc/src/store/index_store.rs
 bin-rs/jjc/src/working_copy.rs    cloud-none working copy and factory
 bin-rs/jjc/src/default_config.rs  default config layer
 bin-rs/jjc/src/commands/cloud/repo.rs      jjc cloud repo create
@@ -246,8 +227,8 @@ streams.
 
 - [ ] `source-api --data-dir <dir>` (required).
 - [ ] `lib-go/sourceapi/storage`: `Storage` interface with `PutObject`, `GetObject`, `HasObjects`,
-      `ObjectSize`, `Generation`/`SetGeneration`, and the repo methods of section 3.
-      `NewFS(dataDir)` is the file implementation over `objstore` plus sidecars.
+      `ObjectSize`, and the repo methods of section 3. `NewFS(dataDir)` is the file implementation
+      over `objstore` plus sidecars.
 - [ ] `source_api.proto`: `ObjectKind`, `Object { bytes id; ObjectKind kind; bytes content; }`, and
       these RPCs on `Objects`:
   - `PutObjects(objects[])`: re-hashes each object and rejects the whole batch with
@@ -310,34 +291,14 @@ Tests:
       All 20 end up as its heads, and the root is gone.
 - [ ] Integration: the registry and op heads survive a restart.
 
-## 4. Service commit graph
-
-Outcome: the service streams exactly the commits a machine is missing.
-
-- [ ] `GetCommitGraph(heads[], known_heads[]) → stream { commits[] }`: every commit reachable from
-      `heads` and not from `known_heads`, in batches of at most 4 MiB. `NotFound` if a head isn't
-      stored. Unknown `known_heads` are ignored. `DataLoss` naming the commit if an ancestor is
-      missing. Generations are computed iteratively (no recursion) and stored.
-
-Tests:
-
-- [ ] Integration: linear history, `known_heads` empty, then at the old tip: the full history, then
-      only the new commits.
-- [ ] Integration: a branch forked from an old trunk commit, with the current trunk tip known: only
-      the branch commits, none of trunk.
-- [ ] Integration: merges, a known head that is a descendant of a requested head (nothing returned),
-      and a history over 4 MiB split across several messages.
-- [ ] Integration: generations are still there after a restart, and a child uploaded before its
-      parent gets the right generation.
-
-## 5. Daemon local store and reads and writes
+## 4. Daemon local store and reads and writes
 
 Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetch on a miss.
 
 - [ ] `srcd --data-dir` (default `$XDG_STATE_HOME/jjc/srcd`, then `~/.local/state/jjc/srcd`).
 - [ ] `lib-go/srcd/localstore`: primary and cache `objstore`s, `Read(id)` (cache, then primary),
       `Write(kind, content) → id` (hash, fsync'd write to primary unless already stored), op ID
-      lists per repo, and the complete-heads set.
+      lists per repo.
 - [ ] `lib-go/srcd/sourceapiclient`: `GetObjects` in batches of at most 4 MiB of expected content,
       falling back to `DownloadObject` for `too_large`. Every call is bounded by
       `--source-api-timeout`.
@@ -353,7 +314,7 @@ Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetc
     sees for the repo.
 - [ ] A fetched object is re-hashed and checked against the requested ID and kind before it's
       cached. A mismatch fails with `DataLoss` and isn't cached.
-- [ ] Writes are queued for upload once section 6 exists. Until then they stay in primary.
+- [ ] Writes are queued for upload once section 5 exists. Until then they stay in primary.
 
 Tests:
 
@@ -366,7 +327,7 @@ Tests:
 - [ ] Integration: prefix resolution finds a unique op, and reports ambiguous and unknown prefixes.
       The list survives a daemon restart.
 
-## 6. Daemon uploads, op heads, repos and workspaces
+## 5. Daemon uploads, op heads, repos and workspaces
 
 Outcome: written objects reach the service in the background, and an operation is published only
 once everything written before it is uploaded.
@@ -402,24 +363,7 @@ Tests:
 - [ ] Integration: two users through one daemon, one with two workspaces, publish to the same repo,
       and each workspace reads back only its own op heads.
 
-## 7. Daemon bulk commit-graph fetch
-
-Outcome: the daemon fetches the commits the index builder needs in one call.
-
-- [ ] `Store.FetchCommitGraph(commit_ids[])`: implements the complete-heads rules above. Each
-      streamed commit is verified and cached. The complete-heads set is updated only after the whole
-      stream succeeds.
-- [ ] `WriteCommit` adds the commit to the complete-heads set when the rules allow it.
-
-Tests:
-
-- [ ] Integration: a cold fetch caches the full history. Then reads work with the service stopped.
-- [ ] Integration: a second fetch for a newer head sends the earlier heads as `known_heads` and
-      receives only new commits (counted by a wrapper).
-- [ ] Integration: IDs that are all complete make no service call. The set survives a restart.
-- [ ] Integration: a stream that fails midway leaves the set unchanged.
-
-## 8. CLI encoding
+## 6. CLI encoding
 
 Outcome: the CLI encodes objects, operations and views exactly as stock jj does.
 
@@ -441,7 +385,7 @@ Tests:
       written through stock `SimpleOpStore` and through `op_proto`, give the same protobuf bytes and
       decode back.
 
-## 9. CLI store shims, repo and workspace commands, and defaults
+## 7. CLI store shims, repo and workspace commands, and defaults
 
 Outcome: `jjc cloud repo create` and `jjc cloud workspace create` make a working workspace, and jj
 history commands work in it.
@@ -460,8 +404,6 @@ history commands work in it.
   - `store/op_heads_store.rs`: `OpHeadsStore` over `OpHeads`, with the file lock. The initializer
     writes `repo_name`, `user_email` and `workspace_name` and publishes nothing, and the loader does
     the user check and maps `NotFound` to the deleted-workspace error.
-  - `store/index_store.rs`: the `DefaultIndexStore` wrapper with the bulk commit-graph fetch.
-    `collect_unindexed_commit_ids(index_dir, op)` is a separate function.
 - [ ] `working_copy.rs`: the `cloud-none` working copy and factory.
 - [ ] `default_config.rs`: the default config layer.
 - [ ] `commands/cloud/repo.rs`: `jjc cloud repo create <repo>` calls `Repo.CreateRepo(repo)`.
@@ -495,9 +437,6 @@ history commands work in it.
 
 Tests:
 
-- [ ] Unit: `collect_unindexed_commit_ids` on a stock local repo in a temp dir, with ops that
-      abandon and rewrite commits. It includes the abandoned commit and the rewritten predecessor,
-      and stops at an op that has an `op_links` marker.
 - [ ] Unit: the mapping from gRPC errors to jj-lib errors.
 - [ ] E2E (`e2e/tests/repo.rs`): `repo_lifecycle`. `repo create`, then `workspace create` with no
       `path` (the repo directory is `./<name>`, and `jj log` shows `<name>@`), then `jj new`,
@@ -524,7 +463,7 @@ Tests:
   - The service killed, then `jj describe`: fails with the upload error. After
     `SourceApi::restart()`, `op log` shows no new operation and the same `describe` succeeds.
 
-## 10. Spec, roadmap and glossary updates
+## 8. Spec, roadmap and glossary updates
 
 After the code is in:
 
@@ -538,21 +477,18 @@ After the code is in:
   - `CreateRepo`, the `NotFound`, `InvalidArgument` and `FailedPrecondition` cases, user key
     validation and encoding, message sizes and chunking. The workspace RPCs are already in the spec;
     check their errors match.
-  - `GetCommitGraph` exactness with stored generation numbers.
 - [ ] [srcd.md](../spec/srcd.md):
   - `--data-dir` and the local storage layout.
   - The uploader, its backoff, and the barrier.
   - The final `Store`, `OpStore`, `OpHeads` and `Workspace` RPCs, with repo names on `OpStore` and
     prefix resolution.
-  - Complete heads in `FetchCommitGraph`, fetch verification, and the op-heads file lock.
+  - Fetch verification and the op-heads file lock.
   - Remove `GetCopyRecords`. Blob metadata starts in M4.
 - [ ] [jjc.md](../spec/jjc.md):
   - The narrowed repo creation block. `repo create` and the `workspace` commands are already in the
     spec; check their errors match.
   - Operation and view encoding, the copied conversion code, and the root objects.
   - The `cloud-none` working copy.
-  - Commit index: replace `FetchCommitGraph(view heads)` with the wrapper's walk over unindexed ops,
-    hidden commits included.
   - User identity: the `user_email` and `workspace_name` files in the repo directory. The check and
     its error are already in the spec.
   - v1 limitations: no signing, no copy records or tracked copies, no `jj util gc`.
