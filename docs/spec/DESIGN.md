@@ -33,6 +33,11 @@ jjc ──gRPC/UDS──▶ srcd ──gRPC/HTTP2──▶ source-api
   workspace's operation log and op heads, and trunk.
 - **srcd** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace overlay
   of local edits and the working-copy state.
+- **Storage:** the service and the daemon each keep object content in content-addressed files and
+  all other state (repos, workspaces, op heads, trunk, and the daemon's local records) in a SQLite
+  database, so multi-part updates such as a publish or a push are single transactions. Each assumes
+  one process per data dir. Until v1 ships, schema changes mean starting from an empty data dir, not
+  migrating.
 - **jjc** is stateless apart from workspace config. It implements jj-lib's store and working copy
   traits as thin RPC shims to the daemon.
 

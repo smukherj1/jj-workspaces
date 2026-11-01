@@ -159,6 +159,11 @@ The system runs unattended against the target codebase and meets the PRD targets
 
 Open questions:
 
+- **Service metadata in production** (before sub-milestone 1). From M2, the service keeps metadata
+  (objects' rows, repos, workspaces, op heads and later trunk) in SQLite on local disk, which
+  assumes a single service process. Options: keep SQLite on a durable volume with continuous backups
+  (e.g. Litestream), or move metadata to a managed database behind the `Storage` interface. MVP
+  schemas have no migrations, so this also decides whether production data needs them.
 - **Kernel versions on target machines** (before sub-milestone 3). FUSE passthrough for materialized
   files needs Linux 6.9+. Confirm the target machines run it.
 - **Op-log fetch at scale** (before sub-milestone 3). In M2, reading the op log costs one round trip

@@ -115,24 +115,47 @@ eviction and cleanup of objects left by failed publishes (M7).
 
 ### Storage on disk
 
+- **Split:** object content lives in content-addressed files. All other state lives in one SQLite
+  database per binary, `<data-dir>/meta.db`, opened through `database/sql` with `modernc.org/sqlite`
+  (pure Go, no cgo).
 - **Object layout** (service and daemon): `objects/<2 hex>/<38 hex>`, stored as the Git header plus
   content, uncompressed. Writes go to a temp file, fsync, rename.
-- **Service:** `--data-dir` is required.
-  - Objects go in `<data-dir>/objects/`. A sidecar `<object>.meta` holds the upload time and
-    `(size, SHA-256)` for blobs.
-  - A repo is the directory `<data-dir>/repos/<repo>/`. A workspace is the directory
-    `<data-dir>/repos/<repo>/workspaces/<user>/<name>/`, with the email percent-encoded (everything
-    outside `[A-Za-z0-9._@-]`). Its `op_heads` file holds one hex ID per line, rewritten atomically
-    under a per-repo mutex that also covers creating and deleting workspaces. This assumes a single
-    service process.
-  - Everything sits behind a Go interface that M7 replaces.
+- **SQLite settings:** WAL, `synchronous=NORMAL` so a publish that returned is durable to crashes,
+  `foreign_keys=ON`, a `busy_timeout`, and every write in a `BEGIN IMMEDIATE` transaction. One
+  process per data dir.
+- **Schema:** no migrations in the MVP. A binary creates its schema in an empty database and records
+  its schema version in `PRAGMA user_version`. If an existing database has another version, it
+  refuses to start with
+  `<data-dir> has schema v<n>, this <binary> needs v<m>; delete <data-dir> to start over`. It never
+  wipes data itself, because the daemon's data dir holds objects not yet uploaded.
+- **Service:** `--data-dir` is required. Object content goes in `<data-dir>/objects/`, and `meta.db`
+  has these tables:
+  - `objects(id PK, kind, size, sha256, uploaded_at)`, with `sha256` set for blobs only.
+  - `repos(id INTEGER PK, name UNIQUE, created_at)`.
+  - `workspaces(id INTEGER PK, repo_id, user_email, name, created_at)`, unique on
+    `(repo_id, user_email, name)`. Users have no table: the user is the opaque `user_email` column.
+  - `op_heads(workspace_id, op_id)`, keyed on both, deleted with its workspace by cascade.
+  - Repos and workspaces have integer keys so they can be renamed later without rewriting other
+    tables. Names are what the API uses.
+- **Writing objects on the service:** each object's file is written first, then its `objects` row,
+  with a batch's rows in one transaction. The row is what makes an object stored: `HasObjects`,
+  `GetObjects`, `ObjectSize` and `UpdateOpHeads` read the table. A file with no row, left by a crash
+  between the two, counts as missing and the next upload overwrites it.
+- **Op heads on the service:** `UpdateOpHeads` checks that `new_id` has an `operation` row, deletes
+  `old_ids` and inserts `new_id` in one transaction. Workspace creation and deletion are each one
+  transaction too.
+- **`Storage` interface:** everything on the service sits behind it, with one implementation,
+  `storage.Open(dataDir)`, over `objstore` and `meta.db`. Tests run it on a temp data dir, with no
+  in-memory fake. How the service stores metadata in production is an M7 open question.
 - **Daemon:** `--data-dir` defaults to `$XDG_STATE_HOME/jjc/srcd`, or `~/.local/state/jjc/srcd` if
   that's unset.
   - `primary/objects/`: written objects not yet confirmed on the service. An object moves to the
     cache by rename once its upload is confirmed. At startup, the uploader re-queues whatever is
-    left.
+    left. Where an object is records its upload state, and sequence numbers live only in memory, so
+    `meta.db` has no object table.
   - `cache/objects/`: confirmed or fetched objects. No eviction until M7.
-  - `repos/<name>/op_ids`: append-only list of known op IDs, for prefix resolution.
+  - `meta.db` holds `op_ids(repo, op_id)`, keyed on both, with `op_id` as lowercase hex text. Prefix
+    resolution is a range query on it. M4 and M5 add the workspace, mount and file metadata.
   - The daemon re-hashes fetched objects before caching them. It computes no blob metadata until M4.
 
 ### CLI
@@ -175,9 +198,10 @@ proto/jjc/sourceapi/v1/source_api.proto   object, repo, workspace and op-heads R
 proto/jjc/srcd/v1/srcd.proto              Store, OpStore, OpHeads, Repo, Workspace RPCs
 lib-go/gitobj/                    kinds, sha1dc IDs, commit parent parsing, blob metadata
 lib-go/objstore/                  on-disk content-addressed object directory (service and daemon)
-lib-go/sourceapi/storage/         Storage interface and its file implementation
+lib-go/metadb/                    opens meta.db with its settings and creates or checks the schema
+lib-go/sourceapi/storage/         Storage interface and its implementation over objstore and meta.db
 lib-go/sourceapi/                 RPC handlers: objects.go, repos.go, workspaces.go
-lib-go/srcd/localstore/           primary store, cache, op ID lists
+lib-go/srcd/localstore/           primary store, cache, op IDs in meta.db
 lib-go/srcd/uploader/             background uploader and publish barrier
 lib-go/srcd/sourceapiclient/      batched and chunked object calls, op heads
 lib-go/srcd/                      handlers: store.go, opstore.go, opheads.go, workspace.go
@@ -195,9 +219,10 @@ e2e/tests/repo.rs                 happy path
 e2e/tests/repo_errors.rs          CLI unhappy paths against the real daemon and service
 ```
 
-## 1. Go object package
+## 1. Go object and metadata packages
 
-Outcome: one Go implementation of object IDs and parsing, shared by the service and the daemon.
+Outcome: one Go implementation of object IDs and parsing, and of opening `meta.db`, shared by the
+service and the daemon.
 
 - [ ] `lib-go/gitobj`:
   - `type Kind` (`Commit`, `Tree`, `Blob`, `Operation`, `View`), `String()` giving the header word,
@@ -211,6 +236,10 @@ Outcome: one Go implementation of object IDs and parsing, shared by the service 
       `Get(id) (kind, content, error)`, `Has(id)`, `Size(id)`, `Remove(id)`, `MoveTo(other, id)`
       (rename into another directory on the same filesystem) and `List()`. It doesn't hash; callers
       verify.
+- [ ] `lib-go/metadb`: `Open(path, binary, version, schema) (*sql.DB, error)` applies the
+      [SQLite settings](#storage-on-disk), creates the schema in an empty database and sets
+      `user_version`, and fails with the schema version error on a mismatch. Adds the
+      `modernc.org/sqlite` dependency.
 
 Tests:
 
@@ -219,6 +248,8 @@ Tests:
 - [ ] Unit: `CommitParents` for no, one and two parents, and for a malformed commit.
 - [ ] Unit: `objstore` round trip, idempotent `Put`, `MoveTo`, `List`, and no partial file left when
       a write fails.
+- [ ] Unit: `metadb.Open` creates the schema once, reopens it, and fails with the schema version
+      error, naming the data dir, when the version differs.
 
 ## 2. Service object storage
 
@@ -227,8 +258,8 @@ streams.
 
 - [ ] `source-api --data-dir <dir>` (required).
 - [ ] `lib-go/sourceapi/storage`: `Storage` interface with `PutObject`, `GetObject`, `HasObjects`,
-      `ObjectSize`, and the repo methods of section 3. `NewFS(dataDir)` is the file implementation
-      over `objstore` plus sidecars.
+      `ObjectSize`, and the repo methods of section 3. `storage.Open(dataDir)` is its one
+      implementation, over `objstore` and `meta.db` (see [Storage on disk](#storage-on-disk)).
 - [ ] `source_api.proto`: `ObjectKind`, `Object { bytes id; ObjectKind kind; bytes content; }`, and
       these RPCs on `Objects`:
   - `PutObjects(objects[])`: re-hashes each object and rejects the whole batch with
@@ -251,28 +282,30 @@ Tests:
 - [ ] Integration: a 3 MiB blob uploads in chunks, `GetObjects` returns `too_large(3 MiB)` for it,
       and `DownloadObject` returns the same bytes. A size mismatch in `UploadObject` is rejected.
 - [ ] Integration: objects survive a server restart on the same data dir.
+- [ ] Integration: an object file with no `objects` row is reported missing by `HasObjects` and
+      `GetObjects`, and a later upload of it succeeds.
 
 ## 3. Service repos, workspaces and op heads
 
 Outcome: the service creates repos, keeps a registry of workspaces, and keeps each workspace's op
 heads with atomic updates.
 
-- [ ] `Repo.CreateRepo(repo)`: validates the name (`InvalidArgument`), creates the repo directory,
+- [ ] `Repo.CreateRepo(repo)`: validates the name (`InvalidArgument`), inserts the repo row,
       `AlreadyExists` if the repo exists.
 - [ ] `Workspace.CreateWorkspace(repo, user, name)`: `NotFound` for an unknown repo,
       `InvalidArgument` for an invalid user or name, `AlreadyExists` if the user has the workspace.
-      Creates the workspace directory with op heads `{root op ID}`.
+      Inserts the workspace row and op heads `{root op ID}` in one transaction.
 - [ ] `Workspace.ListWorkspaces(repo, user) → names[]`: `NotFound` for an unknown repo, sorted
       names, empty for a user with none.
 - [ ] `Workspace.DeleteWorkspace(repo, user, name)`: `NotFound` for an unknown repo or workspace.
-      Removes the workspace directory.
+      Deletes the workspace row, and its op heads with it.
 - [ ] `OpHeads.GetOpHeads(repo, user, workspace) → op_ids[]`: `NotFound` for an unknown repo or
       workspace, `InvalidArgument` for an invalid user.
 - [ ] `OpHeads.UpdateOpHeads(repo, user, workspace, old_ids[], new_id)`: `NotFound` for an unknown
       repo or workspace, `InvalidArgument` for an invalid user, `FailedPrecondition` if `new_id`
       isn't stored as an operation. Removes `old_ids` from the workspace's op heads (ignoring ones
-      already gone) and adds `new_id`, atomically under the per-repo mutex. The holder token comes
-      in M4.
+      already gone) and adds `new_id`, in one transaction with the check. The holder token comes in
+      M4.
 
 Tests:
 
@@ -281,8 +314,8 @@ Tests:
       and a 101-character name.
 - [ ] Integration: two workspaces of one user and one workspace of another user with the same name
       as one of them. Updates in one never change the others' op heads, and each new one reads
-      `{root}`. `InvalidArgument` for an empty user and one with a newline. An email with `/` and
-      `%` round-trips through its percent-encoded directory name.
+      `{root}`. `InvalidArgument` for an empty user and one with a newline. An email with `/`, `%`
+      and `'` works as a user.
 - [ ] Integration: list returns only the user's workspaces. After delete, list omits it, both
       op-heads RPCs return `NotFound`, and the name can be created again starting at `{root}`.
 - [ ] Integration: `NotFound` from the workspace and op-heads RPCs for an unknown repo and an
@@ -297,8 +330,8 @@ Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetc
 
 - [ ] `srcd --data-dir` (default `$XDG_STATE_HOME/jjc/srcd`, then `~/.local/state/jjc/srcd`).
 - [ ] `lib-go/srcd/localstore`: primary and cache `objstore`s, `Read(id)` (cache, then primary),
-      `Write(kind, content) → id` (hash, fsync'd write to primary unless already stored), op ID
-      lists per repo.
+      `Write(kind, content) → id` (hash, fsync'd write to primary unless already stored), and the
+      `op_ids` table in `meta.db`.
 - [ ] `lib-go/srcd/sourceapiclient`: `GetObjects` in batches of at most 4 MiB of expected content,
       falling back to `DownloadObject` for `too_large`. Every call is bounded by
       `--source-api-timeout`.
@@ -325,7 +358,7 @@ Tests:
 - [ ] Integration: a service wrapper that returns corrupted content: the read fails with `DataLoss`
       and nothing is cached. A kind mismatch is rejected.
 - [ ] Integration: prefix resolution finds a unique op, and reports ambiguous and unknown prefixes.
-      The list survives a daemon restart.
+      Op IDs are kept per repo and survive a daemon restart.
 
 ## 5. Daemon uploads, op heads, repos and workspaces
 
@@ -425,6 +458,7 @@ history commands work in it.
   - `jjc cloud workspace list <repo>`: one name per line.
   - `jjc cloud workspace delete <repo> <name>`: deletes the workspace on the service and leaves any
     repo directory in place, saying so.
+
 - [ ] Dispatch hook: rejects `jj workspace add`, `forget` and `rename` in cloud repos (see
       [CLI](#cli)).
 
@@ -473,12 +507,13 @@ After the code is in:
   - Repository model: repo names. Workspaces, the registry and per-workspace op heads are already in
     the spec ([ADR 0001](../adr/0001-op-log-per-workspace.md)).
 - [ ] [source-api.md](../spec/source-api.md):
-  - `--data-dir` and the storage layout behind the `Storage` interface.
+  - `--data-dir`, the object files and `meta.db` tables behind the `Storage` interface, the object
+    write order, and the schema version check.
   - `CreateRepo`, the `NotFound`, `InvalidArgument` and `FailedPrecondition` cases, user key
     validation and encoding, message sizes and chunking. The workspace RPCs are already in the spec;
     check their errors match.
 - [ ] [srcd.md](../spec/srcd.md):
-  - `--data-dir` and the local storage layout.
+  - `--data-dir`, the local storage layout, `meta.db` and the schema version check.
   - The uploader, its backoff, and the barrier.
   - The final `Store`, `OpStore`, `OpHeads` and `Workspace` RPCs, with repo names on `OpStore` and
     prefix resolution.

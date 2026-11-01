@@ -137,6 +137,9 @@ The daemon keeps two stores, shared by all workspaces on the machine:
   records, and objects not yet confirmed on the service. Everything in it is persisted and fsync'd.
 - **Cache:** an LRU content-addressed store holding only objects confirmed on the service,
   deduplicated across workspaces (R7).
+- Object content in both stores is in content-addressed files. Other records (known op IDs, and from
+  M4 workspaces, mounts, file metadata and blob metadata) are in a SQLite database in the data dir,
+  which belongs to the primary store.
 - An object written by the CLI starts in the primary store and moves to the cache once its upload is
   confirmed. Objects left behind by a failed publish are uploaded or dropped after an age limit.
 

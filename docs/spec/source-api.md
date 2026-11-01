@@ -22,6 +22,10 @@ and views as opaque objects.
 
 ## Storage
 
+Object content is in content-addressed files. Everything else, including each object's kind, size
+and metadata, is in a SQLite database, and an object counts as stored only once its row is. See
+[DESIGN](DESIGN.md#overview).
+
 - **Objects:** commits, trees, blobs, operations and views, keyed by ID.
 - **Blob metadata:** `(size, SHA-256)` for every blob, stored next to its Git ID.
 - **Upload time** for every object, so garbage collection can be added later without a migration.
