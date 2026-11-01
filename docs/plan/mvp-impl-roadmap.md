@@ -57,10 +57,10 @@ jj commands that read and rewrite history work through the stack, with no files 
    workspace starts at the root operation, op heads of an unknown workspace are `NotFound`, and
    workspaces never see each other's op heads.
 2. **Daemon:** `Store`, `OpStore` and `OpHeads` work, with op heads named by repo, user and
-   workspace, and workspace creation is forwarded. Written objects
-   are hashed, persisted and uploaded in the background. Reads come from local storage, with a fetch
-   on a miss. The commit graph is fetched in bulk. An operation is published only once every object
-   it references is on the service.
+   workspace, and workspace creation is forwarded. Written objects are hashed, persisted and
+   uploaded in the background. Reads come from local storage, with a fetch on a miss. The commit
+   graph is fetched in bulk. An operation is published only once every object it references is on
+   the service.
 3. **CLI:** `jjw` registers its `cws` store factories: backend, op store and op heads shims using
    the pinned jj version's commit encoding. Stock repo creation (`git init`, `git clone`,
    `debug init-simple`) stays blocked. The commit index is built from the bulk-fetched commit graph.
@@ -68,11 +68,11 @@ jj commands that read and rewrite history work through the stack, with no files 
    creates a repo on the service, and `jjw cws workspace create` registers a named workspace for the
    user and sets up its repo directory in an ordinary directory, with no working copy and `@` on the
    root commit. `jjw cws workspace list` and `delete` manage the user's workspaces on the service.
-   Later commands there fail clearly if `user.email` changes. There, `jj new`,
-   `describe`, `rebase`, `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock
-   `jj workspace add`, `forget` and `rename` fail. Concurrent operations, run with the same
-   `--at-op`, merge on the next command. A second workspace of the same user starts from the root
-   commit and sees none of the first workspace's operations or commits.
+   Later commands there fail clearly if `user.email` changes. There, `jj new`, `describe`, `rebase`,
+   `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock `jj workspace add`, `forget`
+   and `rename` fail. Concurrent operations, run with the same `--at-op`, merge on the next command.
+   A second workspace of the same user starts from the root commit and sees none of the first
+   workspace's operations or commits.
 
 See [m2-implementation.md](m2-implementation.md) for detailed implementation plan.
 
@@ -104,18 +104,17 @@ fetched only when read. The mount is read-only.
 1. **Service:** serves subtrees with each blob's size and digest, without the blobs.
 2. **Daemon:** creates, opens, lists and deletes workspaces, setting up each workspace's repo
    directory, and takes the workspace's hold on the service when it creates or opens one. It mounts
-   each workspace with FUSE, serves `stat` and `readdir` without blob
-   downloads, and fetches file contents on first read, then serves them from the cache. Checking out
-   a tree costs O(diff between trees). Inodes are stable, and mtimes change only for paths whose
-   content changed.
+   each workspace with FUSE, serves `stat` and `readdir` without blob downloads, and fetches file
+   contents on first read, then serves them from the cache. Checking out a tree costs O(diff between
+   trees). Inodes are stable, and mtimes change only for paths whose content changed.
 3. **CLI:** `jjw cws workspace create` now mounts the cloud workspace at the given path, and
    `jjw cws workspace open` opens an existing workspace on another machine. The repo directory moves
-   to the daemon's location. A registered working copy factory handles checkout and state,
-   including conflict materialization and stale working copy detection. On a fresh machine, a user
-   creates a workspace for an existing cloud repo and moves between revisions with `jj new` and
-   `jj edit`. The user opens the workspace on a second machine and sees its history there, and the
-   first machine's next command fails with `workspace <name> is open on <host>`. A first benchmark
-   measures workspace creation, checkout time and cached read latency (R1, R4).
+   to the daemon's location. A registered working copy factory handles checkout and state, including
+   conflict materialization and stale working copy detection. On a fresh machine, a user creates a
+   workspace for an existing cloud repo and moves between revisions with `jj new` and `jj edit`. The
+   user opens the workspace on a second machine and sees its history there, and the first machine's
+   next command fails with `workspace <name> is open on <host>`. A first benchmark measures
+   workspace creation, checkout time and cached read latency (R1, R4).
 
 Open questions:
 

@@ -25,8 +25,8 @@ files.
    local-disk speed.
 5. **Private work, shared trunk:** many developers work in one cloud repo, each in as many named
    cloud workspaces as they like. Each workspace's bookmarks, in-progress commits and operation
-   history are its own, so undo in one never touches another, and finished work is shared by
-   pushing it to trunk, which only moves forward.
+   history are its own, so undo in one never touches another, and finished work is shared by pushing
+   it to trunk, which only moves forward.
 
 ## 3. Non-Goals (v1)
 
@@ -36,8 +36,8 @@ files.
 - Replacing existing code review systems.
 - Authentication and authorization. A user is whoever their jj `user.email` says, and nothing stops
   one user from acting as another.
-- Seeing or building on unpushed work from another workspace, even the same user's. Workspaces
-  share work only through trunk.
+- Seeing or building on unpushed work from another workspace, even the same user's. Workspaces share
+  work only through trunk.
 
 ## 4. Users
 

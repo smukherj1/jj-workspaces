@@ -141,10 +141,9 @@ trees and dirty paths, and never need to understand jj.
 - **Publishing** is not [pushing](#trunk-and-push) and needs no separate command. Every jj command
   that changes the repo ends by writing an operation and calling `UpdateOpHeads` on the workspace's
   op heads, and that call makes the change durable, so it is there wherever the workspace is opened
-  next. It is
-  synchronous: it returns only once the operation, every object it references and the new op heads
-  are on the service. If any step fails, the command fails. Op heads never point to data the service
-  doesn't have.
+  next. It is synchronous: it returns only once the operation, every object it references and the
+  new op heads are on the service. If any step fails, the command fails. Op heads never point to
+  data the service doesn't have.
 - **Reading op heads:** every command reads the workspace's op heads from the service, so reads are
   never stale. Trunk is read only by push and fetch.
 - **Crash safety:** if anything dies before a publish finishes, the command fails and nothing

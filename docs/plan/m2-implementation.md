@@ -167,8 +167,8 @@ cleanup of objects left by failed publishes (M7).
   `this repo directory belongs to <old>; user.email is <new>` and the hint
   `set it back, e.g. for this repo only: jj config set --repo user.email <old>`. An empty
   `user.email` fails with `user.email isn't set` and a hint to set it. Every command that loads the
-  repo goes through the loader, so none can publish to another user's op heads by accident. Op
-  heads of a deleted workspace fail with `workspace <name> doesn't exist in repo <repo>`.
+  repo goes through the loader, so none can publish to another user's op heads by accident. Op heads
+  of a deleted workspace fail with `workspace <name> doesn't exist in repo <repo>`.
 - **Stock workspace commands:** the dispatch hook that blocks stock repo creation also rejects
   `jj workspace add`, `forget` and `rename` in a cloud repo with
   `cloud workspaces are managed with jjw cws workspace` and a hint naming `jjw cws workspace create`
@@ -442,8 +442,8 @@ Tests:
 
 ## 9. CLI store shims, repo and workspace commands, and defaults
 
-Outcome: `jjw cws repo create` and `jjw cws workspace create` make a working cloud workspace, and
-jj history commands work in it.
+Outcome: `jjw cws repo create` and `jjw cws workspace create` make a working cloud workspace, and jj
+history commands work in it.
 
 - [ ] `daemon.proto` client RPCs for `Store`, `OpStore`, `OpHeads` and `Workspace` (`CreateRepo`,
       `Create`, `List`, `Delete`), and matching `DaemonClient` methods. The client accepts 8 MiB
@@ -529,13 +529,13 @@ After the code is in:
 - [ ] [DESIGN.md](../spec/DESIGN.md):
   - Object model: operation and view IDs, root objects, the wire form `(id, kind, content)`.
   - Publishing: the barrier and how it fails fast when the service is unreachable.
-  - Repository model: repo names. Workspaces, the registry and per-workspace op heads are already
-    in the spec ([ADR 0001](../adr/0001-op-log-per-workspace.md)).
+  - Repository model: repo names. Workspaces, the registry and per-workspace op heads are already in
+    the spec ([ADR 0001](../adr/0001-op-log-per-workspace.md)).
 - [ ] [workspace-service.md](../spec/workspace-service.md):
   - `--data-dir` and the storage layout behind the `Storage` interface.
   - `CreateRepo`, the `NotFound`, `InvalidArgument` and `FailedPrecondition` cases, user key
-    validation and encoding, message sizes and chunking. The workspace RPCs are already in the
-    spec; check their errors match.
+    validation and encoding, message sizes and chunking. The workspace RPCs are already in the spec;
+    check their errors match.
   - `GetCommitGraph` exactness with stored generation numbers.
 - [ ] [daemon.md](../spec/daemon.md):
   - `--data-dir` and the local storage layout.
@@ -554,9 +554,9 @@ After the code is in:
   - User identity: the `user_email` and `workspace_name` files in the repo directory. The check and
     its error are already in the spec.
   - v1 limitations: no signing, no copy records or tracked copies, no `jj util gc`.
-- [ ] [GLOSSARY.md](../../GLOSSARY.md): already has **Cloud workspace**, **Workspace name**,
-      **Repo directory**, **Op heads** and **Publish**. Check that nothing in the implementation
-      changed their meaning.
+- [ ] [GLOSSARY.md](../../GLOSSARY.md): already has **Cloud workspace**, **Workspace name**, **Repo
+      directory**, **Op heads** and **Publish**. Check that nothing in the implementation changed
+      their meaning.
 - [ ] Mark M2 and this plan done in the [roadmap](mvp-impl-roadmap.md).
 
 ## Open questions
