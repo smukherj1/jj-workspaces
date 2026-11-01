@@ -1,10 +1,10 @@
-# PRD: JJ Cloud Workspaces
+# PRD: JJ Cloud Source
 
 **Status:** Draft · **Date:** 2026-10-31
 
-A _cloud workspace_ is a jj workspace whose working copy the daemon serves on demand instead of
-writing it to disk, and a _cloud repo_ is the jj repo it belongs to, hosted on the remote service.
-See the [glossary](../../GLOSSARY.md).
+A _cloud repo_ is a jj repo hosted on the _source API_, and a _workspace_ is a jj workspace of a
+cloud repo whose working copy the daemon serves on demand instead of writing it to disk. See the
+[glossary](../../GLOSSARY.md).
 
 ## 1. Problem
 
@@ -15,8 +15,8 @@ files.
 
 ## 2. Goals
 
-1. **Instant checkout:** creating a cloud workspace or switching revisions finishes in seconds,
-   regardless of repository size.
+1. **Instant checkout:** creating a workspace or switching revisions finishes in seconds, regardless
+   of repository size.
 2. **Lazy loading:** file contents are fetched only when a developer, tool, or build reads them, and
    then cached locally.
 3. **Native jj experience:** standard jj commands (`log`, `new`, `edit`, `diff`, `status`, `rebase`,
@@ -24,13 +24,13 @@ files.
 4. **Build-friendly:** builds see a normal filesystem, and reads that hit the cache are close to
    local-disk speed.
 5. **Private work, shared trunk:** many developers work in one cloud repo, each in as many named
-   cloud workspaces as they like. Each workspace's bookmarks, in-progress commits and operation
-   history are its own, so undo in one never touches another, and finished work is shared by pushing
-   it to trunk, which only moves forward.
+   workspaces as they like. Each workspace's bookmarks, in-progress commits and operation history
+   are its own, so undo in one never touches another, and finished work is shared by pushing it to
+   trunk, which only moves forward.
 
 ## 3. Non-Goals (v1)
 
-- Full offline support. Uncached content needs the remote service to be reachable.
+- Full offline support. Uncached content needs the source API to be reachable.
 - Interoperating with Git remotes (`jj git push/fetch`) for a cloud repo.
 - Windows and macOS support. Linux (FUSE) comes first; see Future Work.
 - Replacing existing code review systems.
@@ -44,13 +44,13 @@ files.
 - **Developers** who need fast access to a large codebase and edit a small part of it. Each works on
   their own bookmarks and pushes finished changes to trunk.
 - **CI and build systems** that need many short-lived checkouts at specific revisions.
-- **Tooling and IDE integrations** that read a cloud workspace as a normal directory tree.
+- **Tooling and IDE integrations** that read a workspace as a normal directory tree.
 
 ## 5. Architecture Overview
 
 ```
  ┌──────────────┐   jj Backend / WorkingCopy APIs   ┌────────────────────┐        ┌──────────────────┐
- │   jj CLI     │ ────────────── IPC ─────────────▶ │   Local Daemon     │ ─RPC─▶ │  Remote Service  │
+ │   jj CLI     │ ────────────── IPC ─────────────▶ │   Local Daemon     │ ─RPC─▶ │    Source API    │
  │ (custom      │                                   │ - object cache     │        │ - object store   │
  │  backend +   │ ◀──── VFS mount (FUSE) ─────────▶ │ - VFS (FUSE)       │        │ - commit graph   │
  │  working     │                                   │ - prefetch         │        │ - user op logs   │
@@ -65,16 +65,16 @@ files.
 - Implements a custom `WorkingCopy` / `LockedWorkingCopy` that does **not** write files to disk. A
   checkout tells the daemon to point the VFS at a root tree ID, and a snapshot asks the daemon for
   the set of modified paths instead of scanning the tree.
-- Registered through jj's store factories. Creating a cloud workspace registers it, by name, on the
-  remote service and goes through the local daemon, which sets up the workspace's repo directory and
-  mounts the workspace; no local clone is made.
+- Registered through jj's store factories. Creating a workspace registers it, by name, on the source
+  API and goes through the local daemon, which sets up the workspace's repo directory and mounts the
+  workspace; no local clone is made.
 
 ### 5.2 Local daemon
 
-- **Cache plus local state:** the daemon caches data from the remote service and gives jj a common
-  API for talking to it. Everything shared lives on the remote. The only data held solely by the
-  daemon is the overlay of edits not yet snapshotted, per-workspace working-copy state, and objects
-  not yet uploaded; cache eviction never touches it.
+- **Cache plus local state:** the daemon caches data from the source API and gives jj a common API
+  for talking to it. Everything shared lives on the remote. The only data held solely by the daemon
+  is the overlay of edits not yet snapshotted, per-workspace working-copy state, and objects not yet
+  uploaded; cache eviction never touches it.
 - **Content-addressed cache** for trees and file blobs on local disk, with size limits and LRU
   eviction. It is shared across all workspaces on the machine.
 - **VFS layer:** serves a read-only view of the checked-out tree with a copy-on-write overlay for
@@ -87,18 +87,18 @@ files.
   they are written. Publishing an operation (updating op heads) waits until every object it
   references is on the remote.
 
-### 5.3 Remote service
+### 5.3 Source API
 
 - Source of truth and durable storage for all repository data: commits, trees, file contents, the
-  registry of cloud workspaces, each workspace's operation log, view state and op heads, and trunk.
+  registry of workspaces, each workspace's operation log, view state and op heads, and trunk.
 - Each workspace has its own operation log, so commands in one workspace never change another
-  workspace's history. Trunk is the only state workspaces share. The service only lets it move
+  workspace's history. Trunk is the only state workspaces share. The source API only lets it move
   forward, so a commit pushed to trunk can never be removed from it.
 - Provides batch fetch APIs, tree and metadata queries (so the client can list a directory without
   downloading blobs), and ideally server-side diff and history queries for large ranges.
-- Sharing between machines goes through the remote service. Because a workspace's operation log and
-  view state live here, the user can move the workspace to another machine and pick up its state
-  there. A workspace is open on one machine at a time.
+- Sharing between machines goes through the source API. Because a workspace's operation log and view
+  state live here, the user can move the workspace to another machine and pick up its state there. A
+  workspace is open on one machine at a time.
 
 ### 5.4 Object IDs
 
@@ -109,7 +109,7 @@ files.
 
 | ID  | Requirement                                                                                                                                                              | Priority |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
-| R1  | `jjw cws workspace create` / switching revisions completes in < 5 s; cost scales with the diff between trees, not the repo size                                          | P0       |
+| R1  | `jjc cloud workspace create` / switching revisions completes in < 5 s; cost scales with the diff between trees, not the repo size                                        | P0       |
 | R2  | File contents are downloaded only on first access, and stat/readdir need no blob downloads                                                                               | P0       |
 | R3  | `jj status` / snapshot time scales with modified files plus ignored files in the mount, not the total file count                                                         | P0       |
 | R4  | Cached reads within ~1.5× of native local-disk latency                                                                                                                   | P0       |
@@ -120,11 +120,11 @@ files.
 | R9  | Graceful degradation: clear errors (not hangs) when the remote is unreachable, with bounded timeouts                                                                     | P1       |
 | R10 | Observability: metrics for cache hit rate, fetch latency, and bytes fetched per workspace                                                                                | P1       |
 | R11 | Workspaces are independent: commands in one workspace, including `undo` and `op restore`, never change another workspace's history, whether or not the same user owns it | P0       |
-| R12 | Trunk only moves forward: a push that would remove a commit from trunk is rejected by the remote service                                                                 | P0       |
+| R12 | Trunk only moves forward: a push that would remove a commit from trunk is rejected by the source API                                                                     | P0       |
 
 ## 7. Success Metrics
 
-- p50 cloud workspace creation < 2 s and p95 < 5 s on the target codebase.
+- p50 workspace creation < 2 s and p95 < 5 s on the target codebase.
 - More than 90% reduction in bytes downloaded per checkout compared with full clones.
 - Build times on a cold cache no worse than 20% slower than on a full local checkout, and equal on a
   warm cache.

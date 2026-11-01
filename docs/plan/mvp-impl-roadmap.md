@@ -29,7 +29,7 @@ milestones and for open questions that must be answered before a milestone is do
 
 ## Milestones
 
-**Status:** M1 done. M2 planned.
+**Status:** M1 done. Re-brand done. M2 planned.
 
 ### M1: Skeleton through the stack
 
@@ -37,17 +37,20 @@ milestones and for open questions that must be answered before a milestone is do
 
 The three binaries build, start and call each other, with no repository functionality yet.
 
-1. **Service:** `jjw-workspace-service` serves gRPC health and an empty `WorkspaceService`.
-2. **Daemon:** `jjw-daemon` serves `Daemon.GetStatus` and the empty `Store`, `OpStore`, `OpHeads`,
-   `WorkingCopy`, `Workspace` and `Prefetch` services on a Unix socket. `GetStatus` checks the
-   service's health with a bounded timeout.
-3. **CLI:** `jjw`, the custom jj binary at a pinned jj version. `jjw cws status` reports whether the
-   daemon and the service are up. Commands that create a repo fail with a clear error.
+1. **Service:** `source-api` serves gRPC health and the empty `Repo`, `Workspace`, `Objects`,
+   `OpHeads` and `Trunk` services.
+2. **Daemon:** `srcd` serves `Daemon.GetStatus` and the empty `Store`, `OpStore`, `OpHeads`,
+   `WorkingCopy`, `Repo`, `Workspace` and `Prefetch` services on a Unix socket. `GetStatus` checks
+   the service's health with a bounded timeout.
+3. **CLI:** `jjc`, the custom jj binary at a pinned jj version. `jjc cloud status` reports whether
+   the daemon and the service are up. Commands that create a repo fail with a clear error.
 4. **Test harness:** one command starts a service and a daemon and runs the CLI against them.
 
 See [m1-implementation.md](m1-implementation.md) for detailed implementation plan.
 
 ### M2: Shared repository without a working copy
+
+Prerequisite: the [re-brand](re-brand.md) to JJ Cloud Source, done before M2 starts.
 
 jj commands that read and rewrite history work through the stack, with no files checked out.
 
@@ -61,18 +64,18 @@ jj commands that read and rewrite history work through the stack, with no files 
    uploaded in the background. Reads come from local storage, with a fetch on a miss. The commit
    graph is fetched in bulk. An operation is published only once every object it references is on
    the service.
-3. **CLI:** `jjw` registers its `cws` store factories: backend, op store and op heads shims using
+3. **CLI:** `jjc` registers its `cloud` store factories: backend, op store and op heads shims using
    the pinned jj version's commit encoding. Stock repo creation (`git init`, `git clone`,
    `debug init-simple`) stays blocked. The commit index is built from the bulk-fetched commit graph.
-   The default `trunk()` alias is in place. The user is jj's `user.email`. `jjw cws repo create`
-   creates a repo on the service, and `jjw cws workspace create` registers a named workspace for the
-   user and sets up its repo directory in an ordinary directory, with no working copy and `@` on the
-   root commit. `jjw cws workspace list` and `delete` manage the user's workspaces on the service.
-   Later commands there fail clearly if `user.email` changes. There, `jj new`, `describe`, `rebase`,
-   `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock `jj workspace add`, `forget`
-   and `rename` fail. Concurrent operations, run with the same `--at-op`, merge on the next command.
-   A second workspace of the same user starts from the root commit and sees none of the first
-   workspace's operations or commits.
+   The default `trunk()` alias is in place. The user is jj's `user.email`. `jjc cloud repo create`
+   creates a repo on the service, and `jjc cloud workspace create` registers a named workspace for
+   the user and sets up its repo directory in an ordinary directory, with no working copy and `@` on
+   the root commit. `jjc cloud workspace list` and `delete` manage the user's workspaces on the
+   service. Later commands there fail clearly if `user.email` changes. There, `jj new`, `describe`,
+   `rebase`, `log`, `op log` and `undo` work with `--ignore-working-copy`. Stock `jj workspace add`,
+   `forget` and `rename` fail. Concurrent operations, run with the same `--at-op`, merge on the next
+   command. A second workspace of the same user starts from the root commit and sees none of the
+   first workspace's operations or commits.
 
 See [m2-implementation.md](m2-implementation.md) for detailed implementation plan.
 
@@ -86,15 +89,15 @@ work by pushing it to trunk, which only moves forward. There is still no working
    can't both succeed. Every push is appended to a push log.
 2. **Daemon:** forwards trunk reads, and forwards a push only once every object written before it is
    on the service.
-3. **CLI:** `jjw cws workspace create` starts a new workspace's `@` on the current trunk.
-   `jjw cws fetch` brings trunk into the workspace's View as `main@origin`, and `jjw cws push` moves
-   trunk to a commit, refusing conflicted commits and empty descriptions. User A creates a repo and
-   a workspace and pushes a commit. User B creates a workspace in the repo, starts on that commit,
-   and sees none of A's unpushed work or operations. B's push from a stale trunk is rejected, and
-   succeeds after a fetch and rebase. B's `jj undo` never changes A's history, and undoing a push
-   doesn't move trunk. A's second workspace sees A's pushed work but not A's unpushed work, and
-   `jj undo` in one of A's workspaces never changes the other. Two jj processes in one workspace
-   publish concurrent operations that merge on the next command.
+3. **CLI:** `jjc cloud workspace create` starts a new workspace's `@` on the current trunk.
+   `jjc cloud fetch` brings trunk into the workspace's View as `main@origin`, and `jjc cloud push`
+   moves trunk to a commit, refusing conflicted commits and empty descriptions. User A creates a
+   repo and a workspace and pushes a commit. User B creates a workspace in the repo, starts on that
+   commit, and sees none of A's unpushed work or operations. B's push from a stale trunk is
+   rejected, and succeeds after a fetch and rebase. B's `jj undo` never changes A's history, and
+   undoing a push doesn't move trunk. A's second workspace sees A's pushed work but not A's unpushed
+   work, and `jj undo` in one of A's workspaces never changes the other. Two jj processes in one
+   workspace publish concurrent operations that merge on the next command.
 
 ### M4: Workspaces with lazy, read-only checkout
 
@@ -107,14 +110,14 @@ fetched only when read. The mount is read-only.
    each workspace with FUSE, serves `stat` and `readdir` without blob downloads, and fetches file
    contents on first read, then serves them from the cache. Checking out a tree costs O(diff between
    trees). Inodes are stable, and mtimes change only for paths whose content changed.
-3. **CLI:** `jjw cws workspace create` now mounts the cloud workspace at the given path, and
-   `jjw cws workspace open` opens an existing workspace on another machine. The repo directory moves
-   to the daemon's location. A registered working copy factory handles checkout and state, including
-   conflict materialization and stale working copy detection. On a fresh machine, a user creates a
-   workspace for an existing cloud repo and moves between revisions with `jj new` and `jj edit`. The
-   user opens the workspace on a second machine and sees its history there, and the first machine's
-   next command fails with `workspace <name> is open on <host>`. A first benchmark measures
-   workspace creation, checkout time and cached read latency (R1, R4).
+3. **CLI:** `jjc cloud workspace create` now mounts the workspace at the given path, and
+   `jjc cloud workspace open` opens an existing workspace on another machine. The repo directory
+   moves to the daemon's location. A registered working copy factory handles checkout and state,
+   including conflict materialization and stale working copy detection. On a fresh machine, a user
+   creates a workspace for an existing cloud repo and moves between revisions with `jj new` and
+   `jj edit`. The user opens the workspace on a second machine and sees its history there, and the
+   first machine's next command fails with `workspace <name> is open on <host>`. A first benchmark
+   measures workspace creation, checkout time and cached read latency (R1, R4).
 
 Open questions:
 

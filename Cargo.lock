@@ -2579,7 +2579,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "jjw"
+name = "jjc"
 version = "0.1.0"
 dependencies = [
  "clap",

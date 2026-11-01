@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package jjc.srcd.v1;
+
+option go_package = "github.com/smukherj1/jj-workspaces/gen-go/jjc/srcd/v1;srcdv1";
+
+// Services served by srcd to the jjc CLI over a Unix socket. RPCs are added in the milestone that
+// first needs them. See docs/spec/srcd.md.
+
+service Store {}
+
+service OpStore {}
+
+service OpHeads {}
+
+service WorkingCopy {}
+
+service Repo {}
+
+service Workspace {}
+
+service Prefetch {}
+
+// Diagnostics.
+service Daemon {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  string daemon_version = 1;
+  string source_api_address = 2;
+  SourceApiStatus source_api_status = 3;
+}
+
+message SourceApiStatus {
+  SourceApiStatusCode code = 1;
+  string details = 2;
+}
+
+enum SourceApiStatusCode {
+  SOURCE_API_STATUS_CODE_UNSPECIFIED = 0;
+  SOURCE_API_STATUS_CODE_OK = 1;
+  SOURCE_API_STATUS_CODE_UNHEALTHY = 2;
+  SOURCE_API_STATUS_CODE_UNREACHABLE = 3;
+}

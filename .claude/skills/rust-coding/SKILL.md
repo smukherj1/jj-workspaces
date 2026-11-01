@@ -12,8 +12,8 @@ description:
 Name a module's file `<name>.rs`, beside a `<name>/` directory that holds its submodules:
 
 ```
-src/commands.rs          mod cws;
-src/commands/cws.rs
+src/commands.rs          mod cloud;
+src/commands/cloud.rs
 ```
 
 A module with no submodules is a lone `<name>.rs` with no directory. When adding a submodule to it,

@@ -1,23 +1,22 @@
-# JJ Cloud Workspaces Design
+# JJ Cloud Source Design
 
 See [PRD.md](PRD.md) for the product requirements. This document covers the decisions that span
 components and the contracts between them. Each component's API, behavior and internals are in its
 own document.
 
-A _cloud workspace_ is a named jj workspace with its own operation log, whose working copy the
-daemon serves on demand instead of writing it to disk, and a _cloud repo_ is a jj repo whose
-objects, workspaces' operation logs and trunk live on the workspace service. See the
-[glossary](../../GLOSSARY.md).
+A _workspace_ is a named jj workspace of a cloud repo. Unlike a stock jj workspace, it has its own
+operation log, and the daemon serves its working copy on demand instead of writing it to disk. A
+_cloud repo_ is a jj repo whose objects, workspaces' operation logs and trunk live on the _source
+API_. See the [glossary](../../GLOSSARY.md).
 
 ## Components
 
-- [jj-cli.md](jj-cli.md): `jjw` (Rust), a custom jj binary using jj-lib to use the daemon as the
-  storage and working copy backend.
-- [daemon.md](daemon.md): `jjw-daemon` (Go), running on a developer or build machine, interfacing
-  between the jj cli and the workspace service and providing a local cache. Serves the API the CLI
-  calls.
-- [workspace-service.md](workspace-service.md): `jjw-workspace-service` (Go), the remote workspace
-  service for source storage and serving. Serves the API the daemon calls.
+- [jjc.md](jjc.md): `jjc` (Rust), a custom jj binary using jj-lib to use the daemon as the storage
+  and working copy backend.
+- [srcd.md](srcd.md): `srcd` (Go), the daemon running on a developer or build machine, interfacing
+  between the jj cli and the source API and providing a local cache. Serves the API the CLI calls.
+- [source-api.md](source-api.md): `source-api` (Go), the remote server for source storage and
+  serving. Serves the source API the daemon calls.
 
 All three binaries share one project version, `workspace.package.version` in the root `Cargo.toml`,
 and report it with `--version`.
@@ -25,16 +24,16 @@ and report it with `--version`.
 ## Overview
 
 ```
-jj-cli ──gRPC/UDS──▶ daemon ──gRPC/HTTP2──▶ workspace-service
-                       │
+jjc ──gRPC/UDS──▶ srcd ──gRPC/HTTP2──▶ source-api
+                    │
                        └── FUSE mount (one per workspace)
 ```
 
-- **workspace-service** is the only source of truth for shared data: objects, the workspace
-  registry, each workspace's operation log and op heads, and trunk.
-- **daemon** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace
-  overlay of local edits and the working-copy state.
-- **jj-cli** is stateless apart from workspace config. It implements jj-lib's store and working copy
+- **source-api** is the only source of truth for shared data: objects, the workspace registry, each
+  workspace's operation log and op heads, and trunk.
+- **srcd** is a local cache and write-back buffer. It owns the FUSE mount, the per-workspace overlay
+  of local edits and the working-copy state.
+- **jjc** is stateless apart from workspace config. It implements jj-lib's store and working copy
   traits as thin RPC shims to the daemon.
 
 jj semantics (conflict materialization, ignore rules, change IDs, merging concurrent operations)
@@ -43,11 +42,11 @@ trees and dirty paths, and never need to understand jj.
 
 ## Interfaces
 
-- **jj-cli → daemon:** gRPC over a Unix socket, mirroring the jj-lib traits so the CLI stays a thin
-  shim. See [daemon.md](daemon.md#api).
-- **daemon → workspace-service:** plaintext gRPC over HTTP/2 (no TLS or auth in v1), with coarse,
-  batched calls; the daemon never asks for one object at a time if it can avoid it. See
-  [workspace-service.md](workspace-service.md#api).
+- **jjc → srcd:** gRPC over a Unix socket, mirroring the jj-lib traits so the CLI stays a thin shim.
+  See [srcd.md](srcd.md#api).
+- **srcd → source-api:** plaintext gRPC over HTTP/2 (no TLS or auth in v1), with coarse, batched
+  calls; the daemon never asks for one object at a time if it can avoid it. See
+  [source-api.md](source-api.md#api).
 
 ## Repository model
 
@@ -55,13 +54,13 @@ trees and dirty paths, and never need to understand jj.
   because v1 has no authentication. Users aren't registered. Each repo directory records the email
   and workspace it was set up for, and the CLI fails with a clear error if `user.email` no longer
   matches, so changing it never silently switches op logs. An unset email is an error.
-- **Cloud workspaces** are entities the service tracks, keyed by `(repo, user, name)`. A user
-  creates one explicitly with a name unique among their workspaces in the repo, following the repo
-  name rule. Op-heads calls for a workspace that doesn't exist fail with `NotFound`, so a typo never
+- **Workspaces** are entities the source API tracks, keyed by `(repo, user, name)`. A user creates
+  one explicitly with a name unique among their workspaces in the repo, following the repo name
+  rule. Op-heads calls for a workspace that doesn't exist fail with `NotFound`, so a typo never
   starts a fresh op log. Deleting a workspace drops its registry entry and op heads; its objects
   stay. See [ADR 0001](../adr/0001-op-log-per-workspace.md).
-- **One op log and View per cloud workspace.** Op heads are keyed by `(repo, user, workspace)`. A
-  View holds exactly one jj workspace, named as in the registry, plus that workspace's bookmarks and
+- **One op log and View per workspace.** Op heads are keyed by `(repo, user, workspace)`. A View
+  holds exactly one jj workspace, named as in the registry, plus that workspace's bookmarks and
   visible commits, and trunk. Stock `jj workspace add`, `forget` and `rename` are blocked, because
   they would put a second workspace into the View or break its link to the registry.
 - **Creating a workspace** publishes its first operation: `main@origin` at the current trunk and `@`
@@ -98,7 +97,7 @@ trees and dirty paths, and never need to understand jj.
   bookmark and no Git remote behind `origin`. Stock `immutable_heads()` covers `trunk()` and
   untracked remote bookmarks, so jj also refuses to rewrite pushed commits locally. `main@origin`
   changes only on push and fetch, so a workspace's op log changes only when the user acts in it.
-- **Push** (`jjw cws push`) moves trunk to a commit:
+- **Push** (`jjc cloud push`) moves trunk to a commit:
   1. The CLI refuses commits with conflicts or empty descriptions, as `jj git push` does. These are
      jj semantics, so the service doesn't check them.
   2. The daemon waits until every object written before the call is on the service, using the same
@@ -109,7 +108,7 @@ trees and dirty paths, and never need to understand jj.
      again. This fast-forward rule is the whole enforcement of trunk immutability (R12): nothing can
      move trunk backwards or sideways.
   4. The CLI publishes an operation that sets `main@origin` to the pushed commit.
-- **Fetch** (`jjw cws fetch`) reads trunk with `GetTrunk` and publishes one operation setting
+- **Fetch** (`jjc cloud fetch`) reads trunk with `GetTrunk` and publishes one operation setting
   `main@origin` to it, or nothing if it hasn't moved. It never rebases bookmarks or changes, as
   `jj git fetch` doesn't.
 - **Undo:** undoing a push or fetch moves `main@origin` back in the workspace's View only. Trunk
@@ -121,7 +120,7 @@ trees and dirty paths, and never need to understand jj.
 - **IDs** are Git-compatible SHA-1 object IDs, content-addressed, so every object except op heads is
   immutable and freely cacheable. All hashing uses collision detection (sha1dc, as Git does).
 - **Objects:** commits, trees and blobs are valid Git objects (the CLI's encoding is in
-  [jj-cli.md](jj-cli.md#object-encoding)). Operations and views are stored in the same object store.
+  [jjc.md](jjc.md#object-encoding)). Operations and views are stored in the same object store.
 - **`tree_id`** is the Git object ID of a plain root tree. It is neither a commit ID nor a change
   ID: a jj commit points to its root tree, and many commits can share one. Change IDs live inside
   the commit object, so the daemon and the service never look at them. A jj tree with conflicts is a

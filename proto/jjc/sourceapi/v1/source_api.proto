@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package jjc.sourceapi.v1;
+
+option go_package = "github.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1;sourceapiv1";
+
+// Services served by source-api to srcd. RPCs are added in the milestone that first needs them. See
+// docs/spec/source-api.md.
+
+service Repo {}
+
+service Workspace {}
+
+service Objects {}
+
+service OpHeads {}
+
+service Trunk {}

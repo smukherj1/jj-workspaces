@@ -1,4 +1,4 @@
-# JJ Cloud Workspaces Project
+# JJ Cloud Source Project
 
 See dir `docs` for documentation:
 

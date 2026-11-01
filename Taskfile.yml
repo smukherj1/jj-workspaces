@@ -13,11 +13,11 @@ tasks:
       - buf generate
 
   build:
-    desc: Build jjw, jjw-daemon and jjw-workspace-service into target/debug
+    desc: Build jjc, srcd and source-api into target/debug
     cmds:
       - mkdir -p target/debug
       - go build -ldflags "{{.GO_LDFLAGS}}" -o target/debug/ ./bin-go/...
-      - cargo build -p jjw
+      - cargo build -p jjc
 
   lint:
     desc: Check protos, Go, Rust and Markdown for lint and formatting
@@ -45,8 +45,8 @@ tasks:
     desc: Build everything and run the end-to-end tests
     deps: [build]
     env:
-      JJW_BIN: '{{.BIN_DIR}}/jjw'
-      JJW_DAEMON_BIN: '{{.BIN_DIR}}/jjw-daemon'
-      JJW_SERVICE_BIN: '{{.BIN_DIR}}/jjw-workspace-service'
+      JJC_BIN: '{{.BIN_DIR}}/jjc'
+      SRCD_BIN: '{{.BIN_DIR}}/srcd'
+      SOURCE_API_BIN: '{{.BIN_DIR}}/source-api'
     cmds:
       - cargo test -p e2e

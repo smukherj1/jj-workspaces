@@ -1,8 +1,7 @@
-//! End-to-end tests for jjw, jjw-daemon and jjw-workspace-service. Run with `task e2e`.
+//! End-to-end tests for jjc, srcd and source-api. Run with `task e2e`.
 //!
-//! The harness starts real `jjw-workspace-service` and `jjw-daemon` processes and runs `jjw`
-//! against them. `task e2e` sets the binary paths in `JJW_BIN`, `JJW_DAEMON_BIN` and
-//! `JJW_SERVICE_BIN`.
+//! The harness starts real `source-api` and `srcd` processes and runs `jjc` against them.
+//! `task e2e` sets the binary paths in `JJC_BIN`, `SRCD_BIN` and `SOURCE_API_BIN`.
 
 use std::fmt;
 use std::fs::File;
@@ -25,16 +24,16 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
 /// The project version, which all three binaries report.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-pub fn jjw_bin() -> PathBuf {
-    bin_from_env("JJW_BIN")
+pub fn jjc_bin() -> PathBuf {
+    bin_from_env("JJC_BIN")
 }
 
-pub fn daemon_bin() -> PathBuf {
-    bin_from_env("JJW_DAEMON_BIN")
+pub fn srcd_bin() -> PathBuf {
+    bin_from_env("SRCD_BIN")
 }
 
-pub fn service_bin() -> PathBuf {
-    bin_from_env("JJW_SERVICE_BIN")
+pub fn source_api_bin() -> PathBuf {
+    bin_from_env("SOURCE_API_BIN")
 }
 
 fn bin_from_env(var: &str) -> PathBuf {
@@ -43,39 +42,39 @@ fn bin_from_env(var: &str) -> PathBuf {
         .into()
 }
 
-/// A running `jjw-workspace-service`, killed on drop.
-pub struct Service {
+/// A running `source-api`, killed on drop.
+pub struct SourceApi {
     process: Process,
     addr: String,
 }
 
-impl Service {
-    /// Starts the service on a free port.
+impl SourceApi {
+    /// Starts source-api on a free port.
     pub fn start() -> Self {
-        let mut command = Command::new(service_bin());
+        let mut command = Command::new(source_api_bin());
         command.args(["--listen", "127.0.0.1:0"]);
-        let (process, addr) = Process::spawn("jjw-workspace-service", command);
+        let (process, addr) = Process::spawn("source-api", command);
         Self { process, addr }
     }
 
-    /// The `host:port` the service listens on.
+    /// The `host:port` source-api listens on.
     pub fn addr(&self) -> &str {
         &self.addr
     }
 
-    /// Kills the service and waits for it to exit.
+    /// Kills source-api and waits for it to exit.
     pub fn kill(&mut self) {
         self.process.kill();
     }
 }
 
 /// An in-process gRPC health server that reports `NOT_SERVING`, standing in for an unhealthy
-/// `jjw-workspace-service`. It runs until the test process exits.
-pub struct UnhealthyService {
+/// `source-api`. It runs until the test process exits.
+pub struct UnhealthySourceApi {
     addr: String,
 }
 
-impl UnhealthyService {
+impl UnhealthySourceApi {
     /// Starts the server on a free port.
     pub fn start() -> Self {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -108,7 +107,7 @@ impl UnhealthyService {
     }
 }
 
-/// A running `jjw-daemon`, killed on drop.
+/// A running `srcd`, killed on drop.
 pub struct Daemon {
     _process: Process,
     socket: PathBuf,
@@ -116,21 +115,21 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    /// Starts a daemon that talks to the service at `service_addr`, bounding each call to it by
-    /// `service_timeout`.
-    pub fn start(service_addr: &str, service_timeout: Duration) -> Self {
+    /// Starts a daemon that talks to source-api at `source_api_addr`, bounding each call to it by
+    /// `source_api_timeout`.
+    pub fn start(source_api_addr: &str, source_api_timeout: Duration) -> Self {
         let socket_dir = short_tempdir();
-        let socket = socket_dir.path().join("daemon.sock");
-        let mut command = Command::new(daemon_bin());
+        let socket = socket_dir.path().join("srcd.sock");
+        let mut command = Command::new(srcd_bin());
         command
             .arg("--socket")
             .arg(&socket)
-            .args(["--service-addr", service_addr])
+            .args(["--source-api-addr", source_api_addr])
             .arg(format!(
-                "--service-timeout={}ms",
-                service_timeout.as_millis()
+                "--source-api-timeout={}ms",
+                source_api_timeout.as_millis()
             ));
-        let (process, listening_on) = Process::spawn("jjw-daemon", command);
+        let (process, listening_on) = Process::spawn("srcd", command);
         assert_eq!(Path::new(&listening_on), socket);
         Self {
             _process: process,
@@ -148,7 +147,7 @@ impl Daemon {
 /// when `TMPDIR` is long.
 pub fn short_tempdir() -> TempDir {
     tempfile::Builder::new()
-        .prefix("jjw-e2e-")
+        .prefix("jjc-e2e-")
         .tempdir_in("/tmp")
         .unwrap()
 }
@@ -207,13 +206,13 @@ impl Drop for Process {
     }
 }
 
-/// An isolated environment for running `jjw` against a daemon socket.
+/// An isolated environment for running `jjc` against a daemon socket.
 pub struct TestEnv {
     home: TempDir,
     socket: PathBuf,
 }
 
-/// The result of a `jjw` run.
+/// The result of a `jjc` run.
 #[derive(Debug)]
 pub struct Output {
     pub code: i32,
@@ -233,7 +232,7 @@ impl fmt::Display for Output {
 }
 
 impl TestEnv {
-    /// Creates an environment whose `jjw` talks to the daemon at `socket`.
+    /// Creates an environment whose `jjc` talks to the daemon at `socket`.
     pub fn new(socket: &Path) -> Self {
         let home = TempDir::new().unwrap();
         std::fs::create_dir(home.path().join("config")).unwrap();
@@ -244,14 +243,14 @@ impl TestEnv {
         }
     }
 
-    /// The directory `jjw` runs in.
+    /// The directory `jjc` runs in.
     pub fn work_dir(&self) -> PathBuf {
         self.home.path().join("work")
     }
 
-    /// Runs `jjw args` in [`Self::work_dir`].
-    pub fn jjw(&self, args: &[&str]) -> Output {
-        let output = Command::new(jjw_bin())
+    /// Runs `jjc args` in [`Self::work_dir`].
+    pub fn jjc(&self, args: &[&str]) -> Output {
+        let output = Command::new(jjc_bin())
             .current_dir(self.work_dir())
             .env("HOME", self.home.path())
             .env("JJ_CONFIG", self.home.path().join("config"))
@@ -259,19 +258,19 @@ impl TestEnv {
             .env("JJ_EMAIL", "test.user@example.com")
             .arg("--color=never")
             .arg("--config")
-            .arg(format!("cws.daemon-socket={}", self.socket.display()))
+            .arg(format!("cloud.daemon-socket={}", self.socket.display()))
             .args(args)
             .stdin(Stdio::null())
             .output()
             .unwrap();
         Output {
-            code: output.status.code().expect("jjw was killed by a signal"),
+            code: output.status.code().expect("jjc was killed by a signal"),
             stdout: String::from_utf8(output.stdout).unwrap(),
             stderr: String::from_utf8(output.stderr).unwrap(),
         }
     }
 
-    /// Insta settings that replace this environment's socket path, service addresses and the
+    /// Insta settings that replace this environment's socket path, source-api addresses and the
     /// project version with placeholders.
     pub fn insta_settings(&self) -> insta::Settings {
         let mut settings = insta::Settings::clone_current();

@@ -25,8 +25,8 @@ and is the source of truth for them. _Avoid_: workspace service, remote service,
 **Repo directory**: A machine's local directory for one workspace, holding its jj repo metadata and
 commit index. _Avoid_: local repo, local clone
 
-**User**: A person working in a cloud repo, identified by email, who creates and owns cloud
-workspaces. _Avoid_: account
+**User**: A person working in a cloud repo, identified by email, who creates and owns workspaces.
+_Avoid_: account
 
 **Op heads**: A workspace's current set of head operations.
 
