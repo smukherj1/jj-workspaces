@@ -196,7 +196,7 @@ New and changed paths:
 ```
 proto/jjc/sourceapi/v1/source_api.proto   object, repo, workspace and op-heads RPCs
 proto/jjc/srcd/v1/srcd.proto              Store, OpStore, OpHeads, Repo, Workspace RPCs
-lib-go/gitobj/                    kinds, sha1dc IDs, commit parent parsing, blob metadata
+lib-go/obj/                       object kinds, IDs and hashing, blob metadata
 lib-go/objstore/                  on-disk content-addressed object directory (service and daemon)
 lib-go/metadb/                    opens meta.db with its settings and creates or checks the schema
 lib-go/sourceapi/storage/         Storage interface and its implementation over objstore and meta.db
@@ -224,14 +224,14 @@ e2e/tests/repo_errors.rs          CLI unhappy paths against the real daemon and 
 Outcome: one Go implementation of object IDs and parsing, and of opening `meta.db`, shared by the
 service and the daemon.
 
-- [ ] `lib-go/gitobj`:
+- [ ] `lib-go/obj`:
   - `type Kind` (`Commit`, `Tree`, `Blob`, `Operation`, `View`), `String()` giving the header word,
     and conversion to and from the proto `ObjectKind`.
   - `type ID [20]byte` with `Hex()`, `ParseHex` and `RootID` (all zeros).
   - `Hash(kind, content) ID`: sha1dc (`github.com/pjbgf/sha1cd`) over the header plus content.
     Returns an error when a collision attack is detected.
-  - `CommitParents(content) ([]ID, error)`: the `parent` header lines of a commit.
-  - `BlobMeta(content) (size uint64, sha256 [32]byte)`.
+  - `BlobMeta(content) (size uint64, sha256 [32]byte)`: the size and SHA-256 of a blob's content
+    (the file bytes, without the header), which the service stores in the `objects` table.
 - [ ] `lib-go/objstore`: `Open(dir)`, `Put(id, kind, content)` (atomic, idempotent),
       `Get(id) (kind, content, error)`, `Has(id)`, `Size(id)`, `Remove(id)`, `MoveTo(other, id)`
       (rename into another directory on the same filesystem) and `List()`. It doesn't hash; callers
@@ -245,7 +245,6 @@ Tests:
 
 - [ ] Unit: `Hash` matches Git for the empty blob (`e69de29…`), the empty tree (`4b825dc…`) and a
       sample commit, and reports the SHAttered collision PDF as an attack.
-- [ ] Unit: `CommitParents` for no, one and two parents, and for a malformed commit.
 - [ ] Unit: `objstore` round trip, idempotent `Put`, `MoveTo`, `List`, and no partial file left when
       a write fails.
 - [ ] Unit: `metadb.Open` creates the schema once, reopens it, and fails with the schema version
