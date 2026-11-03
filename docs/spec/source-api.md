@@ -9,8 +9,9 @@ and views as opaque objects.
 
 ## Running
 
-- **Flags:** `--listen <host:port>` (default `localhost:7470`; port `0` picks a free port) and
-  `--version`, which prints `source-api <version>`.
+- **Flags:** `--listen <host:port>` (default `localhost:7470`; port `0` picks a free port),
+  `--data-dir <dir>` (required; see [Storage](#storage)) and `--version`, which prints
+  `source-api <version>`.
 - **Startup:** once the listener binds, the service prints `listening on <host:port>` to stdout with
   the resolved port. Test harnesses rely on this line. Logs go to stderr.
 - **Health:** `grpc.health.v1` reports `SERVING` for `""` and for each service:
@@ -25,6 +26,10 @@ and views as opaque objects.
 Object content is in content-addressed files. Everything else, including each object's kind, size
 and metadata, is in a SQLite database, and an object counts as stored only once its row is. See
 [DESIGN](DESIGN.md#overview).
+
+An object's file is written first, then its row, with a batch's rows in one transaction. A crash in
+between leaves a file with no row, which counts as missing and is overwritten by the next upload. A
+row whose file is missing or disagrees with it is corruption, and reads fail with `Internal`.
 
 - **Objects:** commits, trees, blobs, operations and views, keyed by ID.
 - **Blob metadata:** `(size, SHA-256)` for every blob, stored next to its Git ID.
@@ -60,14 +65,14 @@ front; each RPC is added in the milestone that first needs it.
 
 ### Objects
 
-| RPC                                              | Behavior                                                                                                                                                                           |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GetObjects(ids[])`                              | Batch fetch small objects (commits, trees, small blobs, operations, views) in one response; returns a `too_large(size)` marker instead of content for blobs over the message limit |
-| `DownloadObject(id) → chunks` (server-streaming) | Download one large blob that doesn't fit in a single message                                                                                                                       |
-| `GetTreeRecursive(tree_id, path, depth)`         | Fetch a subtree's tree objects without blobs, with each blob's `(size, SHA-256)`                                                                                                   |
-| `HasObjects(ids[]) → missing[]`                  | Dedup before upload                                                                                                                                                                |
-| `PutObjects(objects[])`                          | Upload a batch of small objects (commits, trees, small blobs, operations, views) in one request                                                                                    |
-| `UploadObject(chunks)` (client-streaming)        | Upload one large blob that doesn't fit in a single message                                                                                                                         |
+| RPC                                              | Behavior                                                                                                                                                       |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GetObjectsMeta(ids[]) → objects[]`              | Whether each ID is stored and its content size, in request order. Dedups uploads and lets callers split reads into batches                                     |
+| `GetObjects(ids[]) → objects[]`                  | Batch fetch objects in request order, or fail as a whole: `NotFound` naming the first unknown ID, or `InvalidArgument` if they're over 4 MiB of content in all |
+| `DownloadObject(id) → chunks` (server-streaming) | Download one large blob that doesn't fit in a single message                                                                                                   |
+| `GetTreeRecursive(tree_id, path, depth)`         | Fetch a subtree's tree objects without blobs, with each blob's `(size, SHA-256)`                                                                               |
+| `PutObjects(objects[])`                          | Upload a batch of small objects (commits, trees, small blobs, operations, views) in one request                                                                |
+| `UploadObject(chunks)` (client-streaming)        | Upload one large blob that doesn't fit in a single message                                                                                                     |
 
 ### OpHeads
 

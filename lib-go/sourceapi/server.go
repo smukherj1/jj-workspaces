@@ -11,7 +11,17 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	sourceapiv1 "github.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1"
+	"github.com/smukherj1/jj-workspaces/lib-go/objstore"
+	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi/metastore"
 )
+
+// MaxMessageContent is the most object content one RPC message carries, in a batch or as a stream
+// chunk. An object over it can only go through UploadObject and DownloadObject.
+const MaxMessageContent = 4 << 20
+
+// MaxMessageSize is the largest gRPC message the server sends or receives. It's over
+// MaxMessageContent to leave room for IDs and framing.
+const MaxMessageSize = 8 << 20
 
 // serviceNames are the fully qualified names of the source API's gRPC services.
 var serviceNames = []string{
@@ -36,9 +46,6 @@ type (
 	workspaceService struct {
 		sourceapiv1.UnimplementedWorkspaceServer
 	}
-	objectsService struct {
-		sourceapiv1.UnimplementedObjectsServer
-	}
 	opHeadsService struct {
 		sourceapiv1.UnimplementedOpHeadsServer
 	}
@@ -47,12 +54,19 @@ type (
 	}
 )
 
-// NewServer returns a server whose health status is SERVING for "" and for each of serviceNames.
-func NewServer() *Server {
-	s := &Server{grpc: grpc.NewServer(), health: health.NewServer()}
+// NewServer returns a server over meta and objects whose health status is SERVING for "" and for
+// each of serviceNames. The caller closes meta after the server stops.
+func NewServer(meta *metastore.Store, objects *objstore.Store) *Server {
+	s := &Server{
+		grpc: grpc.NewServer(
+			grpc.MaxRecvMsgSize(MaxMessageSize),
+			grpc.MaxSendMsgSize(MaxMessageSize),
+		),
+		health: health.NewServer(),
+	}
 	sourceapiv1.RegisterRepoServer(s.grpc, &repoService{})
 	sourceapiv1.RegisterWorkspaceServer(s.grpc, &workspaceService{})
-	sourceapiv1.RegisterObjectsServer(s.grpc, &objectsService{})
+	sourceapiv1.RegisterObjectsServer(s.grpc, &objectsService{meta: meta, objects: objects})
 	sourceapiv1.RegisterOpHeadsServer(s.grpc, &opHeadsService{})
 	sourceapiv1.RegisterTrunkServer(s.grpc, &trunkService{})
 	healthpb.RegisterHealthServer(s.grpc, s.health)

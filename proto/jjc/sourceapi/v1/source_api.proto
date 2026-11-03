@@ -11,7 +11,27 @@ service Repo {}
 
 service Workspace {}
 
-service Objects {}
+// Stores and serves objects. An object is (id, kind, content), with no Git header: the service
+// computes the header to verify the ID. Every message carries at most 4 MiB of content, as a batch
+// or a stream chunk, so objects over 4 MiB go through UploadObject and DownloadObject. The server
+// accepts messages up to 8 MiB, which leaves room for IDs and framing.
+service Objects {
+  // Stores a batch of objects. Each ID is re-hashed from its kind and content, and if any doesn't
+  // match, the whole batch is rejected with InvalidArgument naming the first bad ID. A batch over
+  // 4 MiB of content is rejected with InvalidArgument.
+  rpc PutObjects(PutObjectsRequest) returns (PutObjectsResponse);
+  // Stores one object streamed in chunks: a header, then the content. Verified as PutObjects does,
+  // and InvalidArgument if the content's length isn't the header's size or a chunk is over 4 MiB.
+  rpc UploadObject(stream UploadObjectRequest) returns (UploadObjectResponse);
+  // Returns whether each requested ID is stored and its content size, in request order. Callers use
+  // it to skip uploads the service already has and to split reads into batches that fit GetObjects.
+  rpc GetObjectsMeta(GetObjectsMetaRequest) returns (GetObjectsMetaResponse);
+  // Returns the requested objects, in request order, or fails as a whole: NotFound naming the first
+  // unknown ID, or InvalidArgument if they're over 4 MiB of content in all.
+  rpc GetObjects(GetObjectsRequest) returns (GetObjectsResponse);
+  // Streams one object: a header, then its content in 4 MiB chunks. NotFound for an unknown ID.
+  rpc DownloadObject(DownloadObjectRequest) returns (stream DownloadObjectResponse);
+}
 
 service OpHeads {}
 
@@ -26,4 +46,94 @@ enum ObjectKind {
   OBJECT_KIND_BLOB = 3;
   OBJECT_KIND_OPERATION = 4;
   OBJECT_KIND_VIEW = 5;
+}
+
+// An object as it goes over the wire.
+message Object {
+  // The 20-byte SHA-1 of "<kind> <len>\0<content>".
+  bytes id = 1;
+  // The object's kind, which gives the header word in the ID hash.
+  ObjectKind kind = 2;
+  // The content, without the Git header.
+  bytes content = 3;
+}
+
+message PutObjectsRequest {
+  // The objects to store, with at most 4 MiB of content in all. Objects over that go through
+  // UploadObject.
+  repeated Object objects = 1;
+}
+
+message PutObjectsResponse {}
+
+message UploadObjectRequest {
+  oneof msg {
+    // The first message.
+    UploadObjectHeader header = 1;
+    // Every later message: the next piece of the content.
+    bytes chunk = 2;
+  }
+}
+
+message UploadObjectHeader {
+  // The object's 20-byte ID, as in Object.id.
+  bytes id = 1;
+  // The object's kind.
+  ObjectKind kind = 2;
+  // The content's length in bytes.
+  uint64 size = 3;
+}
+
+message UploadObjectResponse {}
+
+message GetObjectsMetaRequest {
+  // The 20-byte IDs to look up.
+  repeated bytes ids = 1;
+}
+
+message GetObjectsMetaResponse {
+  // One entry per requested ID, in request order.
+  repeated ObjectMeta objects = 1;
+}
+
+// What the service knows about a requested ID.
+message ObjectMeta {
+  // The requested ID.
+  bytes id = 1;
+  // Whether the object is stored.
+  bool present = 2;
+  // The content's length in bytes, without the Git header. Zero if the object isn't present.
+  uint64 size = 3;
+}
+
+message GetObjectsRequest {
+  // The 20-byte IDs to fetch, with at most 4 MiB of content in all. Objects over that go through
+  // DownloadObject.
+  repeated bytes ids = 1;
+}
+
+message GetObjectsResponse {
+  // The requested objects, in request order.
+  repeated Object objects = 1;
+}
+
+message DownloadObjectRequest {
+  // The 20-byte ID of the object to stream.
+  bytes id = 1;
+}
+
+message DownloadObjectResponse {
+  oneof msg {
+    // The first message.
+    DownloadObjectHeader header = 1;
+    // Every later message: the next piece of the content.
+    bytes chunk = 2;
+  }
+}
+
+message DownloadObjectHeader {
+  // The object's kind.
+  ObjectKind kind = 1;
+  // The content's length in bytes.
+  uint64 size = 2;
 }

@@ -81,11 +81,806 @@ func (ObjectKind) EnumDescriptor() ([]byte, []int) {
 	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{0}
 }
 
+// An object as it goes over the wire.
+type Object struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The 20-byte SHA-1 of "<kind> <len>\0<content>".
+	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The object's kind, which gives the header word in the ID hash.
+	Kind ObjectKind `protobuf:"varint,2,opt,name=kind,proto3,enum=jjc.sourceapi.v1.ObjectKind" json:"kind,omitempty"`
+	// The content, without the Git header.
+	Content       []byte `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Object) Reset() {
+	*x = Object{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Object) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Object) ProtoMessage() {}
+
+func (x *Object) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Object.ProtoReflect.Descriptor instead.
+func (*Object) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *Object) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *Object) GetKind() ObjectKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ObjectKind_OBJECT_KIND_UNSPECIFIED
+}
+
+func (x *Object) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+type PutObjectsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The objects to store, with at most 4 MiB of content in all. Objects over that go through
+	// UploadObject.
+	Objects       []*Object `protobuf:"bytes,1,rep,name=objects,proto3" json:"objects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutObjectsRequest) Reset() {
+	*x = PutObjectsRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutObjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutObjectsRequest) ProtoMessage() {}
+
+func (x *PutObjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutObjectsRequest.ProtoReflect.Descriptor instead.
+func (*PutObjectsRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PutObjectsRequest) GetObjects() []*Object {
+	if x != nil {
+		return x.Objects
+	}
+	return nil
+}
+
+type PutObjectsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutObjectsResponse) Reset() {
+	*x = PutObjectsResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutObjectsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutObjectsResponse) ProtoMessage() {}
+
+func (x *PutObjectsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutObjectsResponse.ProtoReflect.Descriptor instead.
+func (*PutObjectsResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{2}
+}
+
+type UploadObjectRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*UploadObjectRequest_Header
+	//	*UploadObjectRequest_Chunk
+	Msg           isUploadObjectRequest_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadObjectRequest) Reset() {
+	*x = UploadObjectRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadObjectRequest) ProtoMessage() {}
+
+func (x *UploadObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadObjectRequest.ProtoReflect.Descriptor instead.
+func (*UploadObjectRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UploadObjectRequest) GetMsg() isUploadObjectRequest_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *UploadObjectRequest) GetHeader() *UploadObjectHeader {
+	if x != nil {
+		if x, ok := x.Msg.(*UploadObjectRequest_Header); ok {
+			return x.Header
+		}
+	}
+	return nil
+}
+
+func (x *UploadObjectRequest) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Msg.(*UploadObjectRequest_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isUploadObjectRequest_Msg interface {
+	isUploadObjectRequest_Msg()
+}
+
+type UploadObjectRequest_Header struct {
+	// The first message.
+	Header *UploadObjectHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
+}
+
+type UploadObjectRequest_Chunk struct {
+	// Every later message: the next piece of the content.
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+func (*UploadObjectRequest_Header) isUploadObjectRequest_Msg() {}
+
+func (*UploadObjectRequest_Chunk) isUploadObjectRequest_Msg() {}
+
+type UploadObjectHeader struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The object's 20-byte ID, as in Object.id.
+	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// The object's kind.
+	Kind ObjectKind `protobuf:"varint,2,opt,name=kind,proto3,enum=jjc.sourceapi.v1.ObjectKind" json:"kind,omitempty"`
+	// The content's length in bytes.
+	Size          uint64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadObjectHeader) Reset() {
+	*x = UploadObjectHeader{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadObjectHeader) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadObjectHeader) ProtoMessage() {}
+
+func (x *UploadObjectHeader) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadObjectHeader.ProtoReflect.Descriptor instead.
+func (*UploadObjectHeader) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UploadObjectHeader) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *UploadObjectHeader) GetKind() ObjectKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ObjectKind_OBJECT_KIND_UNSPECIFIED
+}
+
+func (x *UploadObjectHeader) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type UploadObjectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadObjectResponse) Reset() {
+	*x = UploadObjectResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadObjectResponse) ProtoMessage() {}
+
+func (x *UploadObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadObjectResponse.ProtoReflect.Descriptor instead.
+func (*UploadObjectResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{5}
+}
+
+type GetObjectsMetaRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The 20-byte IDs to look up.
+	Ids           [][]byte `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectsMetaRequest) Reset() {
+	*x = GetObjectsMetaRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectsMetaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectsMetaRequest) ProtoMessage() {}
+
+func (x *GetObjectsMetaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectsMetaRequest.ProtoReflect.Descriptor instead.
+func (*GetObjectsMetaRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetObjectsMetaRequest) GetIds() [][]byte {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+type GetObjectsMetaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// One entry per requested ID, in request order.
+	Objects       []*ObjectMeta `protobuf:"bytes,1,rep,name=objects,proto3" json:"objects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectsMetaResponse) Reset() {
+	*x = GetObjectsMetaResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectsMetaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectsMetaResponse) ProtoMessage() {}
+
+func (x *GetObjectsMetaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectsMetaResponse.ProtoReflect.Descriptor instead.
+func (*GetObjectsMetaResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *GetObjectsMetaResponse) GetObjects() []*ObjectMeta {
+	if x != nil {
+		return x.Objects
+	}
+	return nil
+}
+
+// What the service knows about a requested ID.
+type ObjectMeta struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The requested ID.
+	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Whether the object is stored.
+	Present bool `protobuf:"varint,2,opt,name=present,proto3" json:"present,omitempty"`
+	// The content's length in bytes, without the Git header. Zero if the object isn't present.
+	Size          uint64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ObjectMeta) Reset() {
+	*x = ObjectMeta{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObjectMeta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObjectMeta) ProtoMessage() {}
+
+func (x *ObjectMeta) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObjectMeta.ProtoReflect.Descriptor instead.
+func (*ObjectMeta) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ObjectMeta) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+func (x *ObjectMeta) GetPresent() bool {
+	if x != nil {
+		return x.Present
+	}
+	return false
+}
+
+func (x *ObjectMeta) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type GetObjectsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The 20-byte IDs to fetch, with at most 4 MiB of content in all. Objects over that go through
+	// DownloadObject.
+	Ids           [][]byte `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectsRequest) Reset() {
+	*x = GetObjectsRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectsRequest) ProtoMessage() {}
+
+func (x *GetObjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectsRequest.ProtoReflect.Descriptor instead.
+func (*GetObjectsRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GetObjectsRequest) GetIds() [][]byte {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+type GetObjectsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The requested objects, in request order.
+	Objects       []*Object `protobuf:"bytes,1,rep,name=objects,proto3" json:"objects,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectsResponse) Reset() {
+	*x = GetObjectsResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectsResponse) ProtoMessage() {}
+
+func (x *GetObjectsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectsResponse.ProtoReflect.Descriptor instead.
+func (*GetObjectsResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetObjectsResponse) GetObjects() []*Object {
+	if x != nil {
+		return x.Objects
+	}
+	return nil
+}
+
+type DownloadObjectRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The 20-byte ID of the object to stream.
+	Id            []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DownloadObjectRequest) Reset() {
+	*x = DownloadObjectRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadObjectRequest) ProtoMessage() {}
+
+func (x *DownloadObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadObjectRequest.ProtoReflect.Descriptor instead.
+func (*DownloadObjectRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DownloadObjectRequest) GetId() []byte {
+	if x != nil {
+		return x.Id
+	}
+	return nil
+}
+
+type DownloadObjectResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Msg:
+	//
+	//	*DownloadObjectResponse_Header
+	//	*DownloadObjectResponse_Chunk
+	Msg           isDownloadObjectResponse_Msg `protobuf_oneof:"msg"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DownloadObjectResponse) Reset() {
+	*x = DownloadObjectResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadObjectResponse) ProtoMessage() {}
+
+func (x *DownloadObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadObjectResponse.ProtoReflect.Descriptor instead.
+func (*DownloadObjectResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DownloadObjectResponse) GetMsg() isDownloadObjectResponse_Msg {
+	if x != nil {
+		return x.Msg
+	}
+	return nil
+}
+
+func (x *DownloadObjectResponse) GetHeader() *DownloadObjectHeader {
+	if x != nil {
+		if x, ok := x.Msg.(*DownloadObjectResponse_Header); ok {
+			return x.Header
+		}
+	}
+	return nil
+}
+
+func (x *DownloadObjectResponse) GetChunk() []byte {
+	if x != nil {
+		if x, ok := x.Msg.(*DownloadObjectResponse_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+type isDownloadObjectResponse_Msg interface {
+	isDownloadObjectResponse_Msg()
+}
+
+type DownloadObjectResponse_Header struct {
+	// The first message.
+	Header *DownloadObjectHeader `protobuf:"bytes,1,opt,name=header,proto3,oneof"`
+}
+
+type DownloadObjectResponse_Chunk struct {
+	// Every later message: the next piece of the content.
+	Chunk []byte `protobuf:"bytes,2,opt,name=chunk,proto3,oneof"`
+}
+
+func (*DownloadObjectResponse_Header) isDownloadObjectResponse_Msg() {}
+
+func (*DownloadObjectResponse_Chunk) isDownloadObjectResponse_Msg() {}
+
+type DownloadObjectHeader struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The object's kind.
+	Kind ObjectKind `protobuf:"varint,1,opt,name=kind,proto3,enum=jjc.sourceapi.v1.ObjectKind" json:"kind,omitempty"`
+	// The content's length in bytes.
+	Size          uint64 `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DownloadObjectHeader) Reset() {
+	*x = DownloadObjectHeader{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DownloadObjectHeader) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DownloadObjectHeader) ProtoMessage() {}
+
+func (x *DownloadObjectHeader) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DownloadObjectHeader.ProtoReflect.Descriptor instead.
+func (*DownloadObjectHeader) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *DownloadObjectHeader) GetKind() ObjectKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ObjectKind_OBJECT_KIND_UNSPECIFIED
+}
+
+func (x *DownloadObjectHeader) GetSize() uint64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
 var File_jjc_sourceapi_v1_source_api_proto protoreflect.FileDescriptor
 
 const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\n" +
-	"!jjc/sourceapi/v1/source_api.proto\x12\x10jjc.sourceapi.v1*\x9e\x01\n" +
+	"!jjc/sourceapi/v1/source_api.proto\x12\x10jjc.sourceapi.v1\"d\n" +
+	"\x06Object\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x120\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1c.jjc.sourceapi.v1.ObjectKindR\x04kind\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\"G\n" +
+	"\x11PutObjectsRequest\x122\n" +
+	"\aobjects\x18\x01 \x03(\v2\x18.jjc.sourceapi.v1.ObjectR\aobjects\"\x14\n" +
+	"\x12PutObjectsResponse\"t\n" +
+	"\x13UploadObjectRequest\x12>\n" +
+	"\x06header\x18\x01 \x01(\v2$.jjc.sourceapi.v1.UploadObjectHeaderH\x00R\x06header\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x05\n" +
+	"\x03msg\"j\n" +
+	"\x12UploadObjectHeader\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x120\n" +
+	"\x04kind\x18\x02 \x01(\x0e2\x1c.jjc.sourceapi.v1.ObjectKindR\x04kind\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\"\x16\n" +
+	"\x14UploadObjectResponse\")\n" +
+	"\x15GetObjectsMetaRequest\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\fR\x03ids\"P\n" +
+	"\x16GetObjectsMetaResponse\x126\n" +
+	"\aobjects\x18\x01 \x03(\v2\x1c.jjc.sourceapi.v1.ObjectMetaR\aobjects\"J\n" +
+	"\n" +
+	"ObjectMeta\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\x12\x18\n" +
+	"\apresent\x18\x02 \x01(\bR\apresent\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\"%\n" +
+	"\x11GetObjectsRequest\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\fR\x03ids\"H\n" +
+	"\x12GetObjectsResponse\x122\n" +
+	"\aobjects\x18\x01 \x03(\v2\x18.jjc.sourceapi.v1.ObjectR\aobjects\"'\n" +
+	"\x15DownloadObjectRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\fR\x02id\"y\n" +
+	"\x16DownloadObjectResponse\x12@\n" +
+	"\x06header\x18\x01 \x01(\v2&.jjc.sourceapi.v1.DownloadObjectHeaderH\x00R\x06header\x12\x16\n" +
+	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\x05\n" +
+	"\x03msg\"\\\n" +
+	"\x14DownloadObjectHeader\x120\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1c.jjc.sourceapi.v1.ObjectKindR\x04kind\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size*\x9e\x01\n" +
 	"\n" +
 	"ObjectKind\x12\x1b\n" +
 	"\x17OBJECT_KIND_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -95,8 +890,15 @@ const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\x15OBJECT_KIND_OPERATION\x10\x04\x12\x14\n" +
 	"\x10OBJECT_KIND_VIEW\x10\x052\x06\n" +
 	"\x04Repo2\v\n" +
-	"\tWorkspace2\t\n" +
-	"\aObjects2\t\n" +
+	"\tWorkspace2\xe8\x03\n" +
+	"\aObjects\x12W\n" +
+	"\n" +
+	"PutObjects\x12#.jjc.sourceapi.v1.PutObjectsRequest\x1a$.jjc.sourceapi.v1.PutObjectsResponse\x12_\n" +
+	"\fUploadObject\x12%.jjc.sourceapi.v1.UploadObjectRequest\x1a&.jjc.sourceapi.v1.UploadObjectResponse(\x01\x12c\n" +
+	"\x0eGetObjectsMeta\x12'.jjc.sourceapi.v1.GetObjectsMetaRequest\x1a(.jjc.sourceapi.v1.GetObjectsMetaResponse\x12W\n" +
+	"\n" +
+	"GetObjects\x12#.jjc.sourceapi.v1.GetObjectsRequest\x1a$.jjc.sourceapi.v1.GetObjectsResponse\x12e\n" +
+	"\x0eDownloadObject\x12'.jjc.sourceapi.v1.DownloadObjectRequest\x1a(.jjc.sourceapi.v1.DownloadObjectResponse0\x012\t\n" +
 	"\aOpHeads2\a\n" +
 	"\x05TrunkBHZFgithub.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1;sourceapiv1b\x06proto3"
 
@@ -113,15 +915,48 @@ func file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP() []byte {
 }
 
 var file_jjc_sourceapi_v1_source_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_jjc_sourceapi_v1_source_api_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_jjc_sourceapi_v1_source_api_proto_goTypes = []any{
-	(ObjectKind)(0), // 0: jjc.sourceapi.v1.ObjectKind
+	(ObjectKind)(0),                // 0: jjc.sourceapi.v1.ObjectKind
+	(*Object)(nil),                 // 1: jjc.sourceapi.v1.Object
+	(*PutObjectsRequest)(nil),      // 2: jjc.sourceapi.v1.PutObjectsRequest
+	(*PutObjectsResponse)(nil),     // 3: jjc.sourceapi.v1.PutObjectsResponse
+	(*UploadObjectRequest)(nil),    // 4: jjc.sourceapi.v1.UploadObjectRequest
+	(*UploadObjectHeader)(nil),     // 5: jjc.sourceapi.v1.UploadObjectHeader
+	(*UploadObjectResponse)(nil),   // 6: jjc.sourceapi.v1.UploadObjectResponse
+	(*GetObjectsMetaRequest)(nil),  // 7: jjc.sourceapi.v1.GetObjectsMetaRequest
+	(*GetObjectsMetaResponse)(nil), // 8: jjc.sourceapi.v1.GetObjectsMetaResponse
+	(*ObjectMeta)(nil),             // 9: jjc.sourceapi.v1.ObjectMeta
+	(*GetObjectsRequest)(nil),      // 10: jjc.sourceapi.v1.GetObjectsRequest
+	(*GetObjectsResponse)(nil),     // 11: jjc.sourceapi.v1.GetObjectsResponse
+	(*DownloadObjectRequest)(nil),  // 12: jjc.sourceapi.v1.DownloadObjectRequest
+	(*DownloadObjectResponse)(nil), // 13: jjc.sourceapi.v1.DownloadObjectResponse
+	(*DownloadObjectHeader)(nil),   // 14: jjc.sourceapi.v1.DownloadObjectHeader
 }
 var file_jjc_sourceapi_v1_source_api_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	0,  // 0: jjc.sourceapi.v1.Object.kind:type_name -> jjc.sourceapi.v1.ObjectKind
+	1,  // 1: jjc.sourceapi.v1.PutObjectsRequest.objects:type_name -> jjc.sourceapi.v1.Object
+	5,  // 2: jjc.sourceapi.v1.UploadObjectRequest.header:type_name -> jjc.sourceapi.v1.UploadObjectHeader
+	0,  // 3: jjc.sourceapi.v1.UploadObjectHeader.kind:type_name -> jjc.sourceapi.v1.ObjectKind
+	9,  // 4: jjc.sourceapi.v1.GetObjectsMetaResponse.objects:type_name -> jjc.sourceapi.v1.ObjectMeta
+	1,  // 5: jjc.sourceapi.v1.GetObjectsResponse.objects:type_name -> jjc.sourceapi.v1.Object
+	14, // 6: jjc.sourceapi.v1.DownloadObjectResponse.header:type_name -> jjc.sourceapi.v1.DownloadObjectHeader
+	0,  // 7: jjc.sourceapi.v1.DownloadObjectHeader.kind:type_name -> jjc.sourceapi.v1.ObjectKind
+	2,  // 8: jjc.sourceapi.v1.Objects.PutObjects:input_type -> jjc.sourceapi.v1.PutObjectsRequest
+	4,  // 9: jjc.sourceapi.v1.Objects.UploadObject:input_type -> jjc.sourceapi.v1.UploadObjectRequest
+	7,  // 10: jjc.sourceapi.v1.Objects.GetObjectsMeta:input_type -> jjc.sourceapi.v1.GetObjectsMetaRequest
+	10, // 11: jjc.sourceapi.v1.Objects.GetObjects:input_type -> jjc.sourceapi.v1.GetObjectsRequest
+	12, // 12: jjc.sourceapi.v1.Objects.DownloadObject:input_type -> jjc.sourceapi.v1.DownloadObjectRequest
+	3,  // 13: jjc.sourceapi.v1.Objects.PutObjects:output_type -> jjc.sourceapi.v1.PutObjectsResponse
+	6,  // 14: jjc.sourceapi.v1.Objects.UploadObject:output_type -> jjc.sourceapi.v1.UploadObjectResponse
+	8,  // 15: jjc.sourceapi.v1.Objects.GetObjectsMeta:output_type -> jjc.sourceapi.v1.GetObjectsMetaResponse
+	11, // 16: jjc.sourceapi.v1.Objects.GetObjects:output_type -> jjc.sourceapi.v1.GetObjectsResponse
+	13, // 17: jjc.sourceapi.v1.Objects.DownloadObject:output_type -> jjc.sourceapi.v1.DownloadObjectResponse
+	13, // [13:18] is the sub-list for method output_type
+	8,  // [8:13] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_jjc_sourceapi_v1_source_api_proto_init() }
@@ -129,19 +964,28 @@ func file_jjc_sourceapi_v1_source_api_proto_init() {
 	if File_jjc_sourceapi_v1_source_api_proto != nil {
 		return
 	}
+	file_jjc_sourceapi_v1_source_api_proto_msgTypes[3].OneofWrappers = []any{
+		(*UploadObjectRequest_Header)(nil),
+		(*UploadObjectRequest_Chunk)(nil),
+	}
+	file_jjc_sourceapi_v1_source_api_proto_msgTypes[12].OneofWrappers = []any{
+		(*DownloadObjectResponse_Header)(nil),
+		(*DownloadObjectResponse_Chunk)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jjc_sourceapi_v1_source_api_proto_rawDesc), len(file_jjc_sourceapi_v1_source_api_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   0,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
 		GoTypes:           file_jjc_sourceapi_v1_source_api_proto_goTypes,
 		DependencyIndexes: file_jjc_sourceapi_v1_source_api_proto_depIdxs,
 		EnumInfos:         file_jjc_sourceapi_v1_source_api_proto_enumTypes,
+		MessageInfos:      file_jjc_sourceapi_v1_source_api_proto_msgTypes,
 	}.Build()
 	File_jjc_sourceapi_v1_source_api_proto = out.File
 	file_jjc_sourceapi_v1_source_api_proto_goTypes = nil

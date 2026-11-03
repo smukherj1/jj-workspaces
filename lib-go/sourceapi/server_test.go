@@ -3,12 +3,16 @@ package sourceapi
 import (
 	"context"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/smukherj1/jj-workspaces/lib-go/objstore"
+	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi/metastore"
 )
 
 // healthNames are "" and the fully qualified name of each source API service.
@@ -28,7 +32,17 @@ func startServer(t *testing.T) (*Server, healthpb.HealthClient) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewServer()
+	dir := t.TempDir()
+	objects, err := objstore.Open(filepath.Join(dir, "objects"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := metastore.Open(filepath.Join(dir, "meta.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { meta.Close() })
+	s := NewServer(meta, objects)
 	served := make(chan error, 1)
 	go func() { served <- s.Serve(lis) }()
 	t.Cleanup(func() {

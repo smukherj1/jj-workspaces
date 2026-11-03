@@ -106,12 +106,18 @@ eviction and cleanup of objects left by failed publishes (M7).
 
 ### Sizes
 
-- Any object over 1 MiB, of any kind, goes through `DownloadObject` and `UploadObject` in 1 MiB
-  chunks. `GetObjects` returns `too_large(size)` for it.
-- A batch (`GetObjects`, `PutObjects`) carries at most 4 MiB of content. The service, the daemon and
-  the CLI's client all accept messages up to 8 MiB.
-- The daemon's `ReadFile` and `WriteFile` stream to and from the CLI in 1 MiB chunks. Other `Store`
+- Every RPC message carries at most 4 MiB of object content, whether a batch (`GetObjects`,
+  `PutObjects`) or a stream chunk. The service, the daemon and the CLI's client all accept messages
+  up to 8 MiB, which leaves room for IDs and framing.
+- Any object over 4 MiB, of any kind, goes through `DownloadObject` and `UploadObject` in 4 MiB
+  chunks.
+- `PutObjects` and `GetObjects` reject a batch over the limit with `InvalidArgument`. Callers learn
+  sizes from `GetObjectsMeta`, split a batched read to fit, and fetch any object over 4 MiB with
+  `DownloadObject`.
+- The daemon's `ReadFile` and `WriteFile` stream to and from the CLI in 4 MiB chunks. Other `Store`
   and `OpStore` RPCs are unary.
+- Streams go through memory one chunk at a time: `UploadObject` and `DownloadObject` read and write
+  the object store as chunks move, so object size doesn't bound a stream's memory.
 
 ### Storage on disk
 
@@ -139,15 +145,22 @@ eviction and cleanup of objects left by failed publishes (M7).
   - Repos and workspaces have integer keys so they can be renamed later without rewriting other
     tables. Names are what the API uses.
 - **Writing objects on the service:** each object's file is written first, then its `objects` row,
-  with a batch's rows in one transaction. The row is what makes an object stored: `HasObjects`,
-  `GetObjects`, `ObjectSize` and `UpdateOpHeads` read the table. A file with no row, left by a crash
-  between the two, counts as missing and the next upload overwrites it.
+  with a batch's rows in one transaction. `UploadObject` writes its temp file as chunks arrive,
+  hashing as it goes, and renames it once the ID matches. The row is what makes an object stored:
+  `GetObjectsMeta`, `GetObjects` and `UpdateOpHeads` read the table. A file with no row, left by a
+  crash between the two, counts as missing and the next upload overwrites it.
 - **Op heads on the service:** `UpdateOpHeads` checks that `new_id` has an `operation` row, deletes
   `old_ids` and inserts `new_id` in one transaction. Workspace creation and deletion are each one
   transaction too.
-- **`Storage` interface:** everything on the service sits behind it, with one implementation,
-  `storage.Open(dataDir)`, over `objstore` and `meta.db`. Tests run it on a temp data dir, with no
-  in-memory fake. How the service stores metadata in production is an M7 open question.
+- **Packages on the service:** `metastore.Store` holds everything in `meta.db` and never sees object
+  content. `objstore.Store` holds the content. The RPC handlers coordinate the two: they verify IDs,
+  compute blob SHA-256, keep the file-before-row order and check files against rows. `objects.go`
+  holds that logic in private methods for now, and M3's `PushTrunk` is what lifts it out, since it
+  also reads objects. `metastore.Store` and `objstore.Store` are concrete types. Tests run them on a
+  temp data dir, with no in-memory fake. How the service stores metadata in production is an M7 open
+  question, and `metastore.Store` is where that implementation changes.
+- **Missing objects:** an object with no row is `NotFound`. A row whose file is missing or disagrees
+  with it is corruption, and reads fail with `Internal`.
 - **Daemon:** `--data-dir` defaults to `$XDG_STATE_HOME/jjc/srcd`, or `~/.local/state/jjc/srcd` if
   that's unset.
   - `primary/objects/`: written objects not yet confirmed on the service. An object moves to the
@@ -200,7 +213,7 @@ proto/jjc/srcd/v1/srcd.proto              Store, OpStore, OpHeads, Repo, Workspa
 lib-go/obj/                       object kinds, IDs and hashing, blob metadata
 lib-go/objstore/                  on-disk content-addressed object directory (service and daemon)
 lib-go/metadb/                    opens meta.db with its settings and creates or checks the schema
-lib-go/sourceapi/storage/         Storage interface and its implementation over objstore and meta.db
+lib-go/sourceapi/metastore/       Store over meta.db: object rows, repos, workspaces, op heads
 lib-go/sourceapi/                 RPC handlers: objects.go, repos.go, workspaces.go
 lib-go/srcd/localstore/           primary store, cache, op IDs in meta.db
 lib-go/srcd/uploader/             background uploader and publish barrier
@@ -254,44 +267,93 @@ Tests:
 - [x] Unit: `metadb.Open` creates the schema once, reopens it, and fails with
       `metadb.ErrSchemaVersionMismatch` when the version differs or a non-empty database has none.
 
-## 2. Service object storage
+## 2. Service object storage (done)
 
 Outcome: the service stores verified objects with blob metadata and serves them in batches and
 streams.
 
-- [ ] `source-api --data-dir <dir>` (required).
-- [ ] `lib-go/sourceapi/storage`: `Storage` interface with `PutObject`, `GetObject`, `HasObjects`,
-      `ObjectSize`, and the repo methods of section 3. `storage.Open(dataDir)` is its one
-      implementation, over `objstore` and `meta.db` (see [Storage on disk](#storage-on-disk)).
-- [ ] `source_api.proto`: `ObjectKind`, `Object { bytes id; ObjectKind kind; bytes content; }`, and
+- [x] `source-api --data-dir <dir>` (required).
+- [x] `lib-go/sourceapi/metastore`: `Store` over `meta.db`, opened with `metastore.Open(path)`, with
+      `GetObjectsMeta` and `InsertObjects` (rows `{id, kind, size, sha256}` in one transaction,
+      keeping an existing row's upload time); section 4 adds the repo methods. Schema v1 already has
+      all four tables, so section 4 needs no version bump.
+- [x] `lib-go/sourceapi/objects.go`: the service holds a `*metastore.Store` and an
+      `*objstore.Store`, which `source-api` opens and passes to `NewServer`. `storeObjects` verifies
+      a batch, writes the files of objects with no row, then inserts their rows. `readObject` and
+      `readFile` check each file against its row (see [Storage on disk](#storage-on-disk)).
+- [x] `source_api.proto`: `ObjectKind`, `Object { bytes id; ObjectKind kind; bytes content; }`, and
       these RPCs on `Objects`:
   - `PutObjects(objects[])`: re-hashes each object and rejects the whole batch with
-    `InvalidArgument` naming the first ID that doesn't match its content. Writes blob metadata and
-    upload time.
+    `InvalidArgument` naming the first ID that doesn't match its content. Rejects a batch over 4 MiB
+    of content. Writes blob metadata and upload time.
   - `UploadObject(stream: header {id, kind, size}, then chunks)`: same verification. Rejects a size
-    mismatch.
-  - `HasObjects(ids[]) → missing[]`.
-  - `GetObjects(ids[]) → results[]`: each result is the object, `too_large(size)` for objects over 1
-    MiB, or `missing`.
-  - `DownloadObject(id) → stream`: first message `{kind, size}`, then 1 MiB chunks. `NotFound` for
+    mismatch and a chunk over 4 MiB.
+  - `GetObjectsMeta(ids[]) → objects[]`: one `ObjectMeta { id, present, size }` per ID, in request
+    order.
+  - `GetObjects(ids[]) → objects[]`: the objects in request order, or an overall error: `NotFound`
+    naming the first unknown ID, or `InvalidArgument` if they're over 4 MiB of content in all.
+  - `DownloadObject(id) → stream`: first message `{kind, size}`, then 4 MiB chunks. `NotFound` for
     an unknown ID.
-- [ ] Servers accept 8 MiB messages.
+- [x] Servers accept 8 MiB messages.
+- [x] Harness: `SourceApi::start` passes a temp `--data-dir`, which is now required. `restart()` is
+      still section 8's.
 
 Tests:
 
-- [ ] Integration (in-process gRPC server on a temp data dir): put then get each kind. A content/ID
-      mismatch is rejected and nothing from the batch is stored. `HasObjects` reports only missing
-      IDs. Blob metadata is stored.
-- [ ] Integration: a 3 MiB blob uploads in chunks, `GetObjects` returns `too_large(3 MiB)` for it,
-      and `DownloadObject` returns the same bytes. A size mismatch in `UploadObject` is rejected.
-- [ ] Integration: objects survive a server restart on the same data dir.
-- [ ] Integration: an object file with no `objects` row is reported missing by `HasObjects` and
-      `GetObjects`, and a later upload of it succeeds.
+- [x] Integration (in-process gRPC server on a temp data dir): put then get each kind. A content/ID
+      mismatch is rejected and nothing from the batch is stored. `GetObjectsMeta` reports presence
+      and size per ID in request order, and `GetObjects` of an unknown ID is `NotFound`. Blob
+      metadata is stored.
+- [x] Integration: a 9 MiB blob uploads in chunks, `GetObjectsMeta` reports its size, `GetObjects`
+      rejects it, and `DownloadObject` returns the same bytes. A size mismatch and a chunk over 4
+      MiB in `UploadObject` are rejected.
+- [x] Integration: a `PutObjects` batch over 4 MiB is rejected and stores nothing, and a 4 MiB
+      object fits. `GetObjects` of two 3 MiB blobs is rejected with `InvalidArgument`, and a batch
+      of exactly 4 MiB is returned.
+- [x] Integration: objects survive a server restart on the same data dir.
+- [x] Integration: an object file with no `objects` row is reported missing by `GetObjectsMeta`,
+      `NotFound` from `GetObjects`, and a later upload of it succeeds.
+- [x] Integration: a row whose file is gone is `Internal` from `GetObjects` and `DownloadObject`.
 
-## 3. Service repos, workspaces and op heads
+## 3. Streamed object storage
+
+Outcome: `UploadObject` and `DownloadObject` move an object between the network and disk a chunk at
+a time, so a stream holds one chunk in memory whatever the object's size. Section 2's handlers load
+the whole object, which defeats the point of streaming.
+
+- [ ] `lib-go/obj`: `NewHasher(kind, size)`, an `io.Writer` over the content, with
+      `Sum() (Digest, error)` returning `ErrCollision` as `Hash` does. `Digest` is `{ID, SHA256}`,
+      with the SHA-256 set for blobs. `Hash` is built on it and still returns just the ID.
+      `BlobMeta` goes.
+- [ ] `lib-go/objstore`:
+  - `Create(kind, size) (*Writer, error)` starts a temp file with the header. `Writer` has `Write`,
+    `Commit(id)` (fails if the bytes written aren't `size`, then fsync and rename, as `Put` does)
+    and `Abort()` (removes the temp file). `Put` is built on it.
+  - `Open(id) (kind, size, io.ReadCloser, error)` reads the content without loading it.
+- [ ] `UploadObject` writes each chunk to an `objstore.Writer` and an `obj.NewHasher` as it arrives,
+      and aborts on any error, including the client going away. It then verifies the ID, calls
+      `Commit(id)` and calls `InsertObjects`. It doesn't check whether the object is already stored:
+      the file is replaced with verified bytes and the row keeps its upload time.
+- [ ] `DownloadObject` calls `GetObjectsMeta`, then `objstore.Open`, checks kind and size against
+      the row, and reads into one 4 MiB buffer.
+- [ ] `PutObjects` and `GetObjects` stay in memory: they serve at most 4 MiB.
+
+Tests:
+
+- [ ] Unit: `NewHasher` matches `Hash` with content split at various points, and reports the
+      collision `Hash` reports.
+- [ ] Unit: a `Writer` commit gives the same file as `Put`. A size mismatch and `Abort` leave no
+      object and no temp file.
+- [ ] Integration: while a 64 MiB blob uploads, the temp file holds the chunks received so far, and
+      the blob then downloads with the same bytes.
+- [ ] Integration: a client that cancels mid-upload leaves no temp file, no row and no object file.
+      A tampered upload is rejected the same way.
+
+## 4. Service repos, workspaces and op heads
 
 Outcome: the service creates repos, keeps a registry of workspaces, and keeps each workspace's op
-heads with atomic updates.
+heads with atomic updates. These are `metastore.Store` methods, since none of them touch object
+content; each transaction, including `UpdateOpHeads`'s operation row check, is one method.
 
 - [ ] `Repo.CreateRepo(repo)`: validates the name (`InvalidArgument`), inserts the repo row,
       `AlreadyExists` if the repo exists.
@@ -327,7 +389,7 @@ Tests:
       All 20 end up as its heads, and the root is gone.
 - [ ] Integration: the registry and op heads survive a restart.
 
-## 4. Daemon local store and reads and writes
+## 5. Daemon local store and reads and writes
 
 Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetch on a miss.
 
@@ -335,9 +397,11 @@ Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetc
 - [ ] `lib-go/srcd/localstore`: primary and cache `objstore`s, `Read(id)` (cache, then primary),
       `Write(kind, content) → id` (hash, fsync'd write to primary unless already stored), and the
       `op_ids` table in `meta.db`.
-- [ ] `lib-go/srcd/sourceapiclient`: `GetObjects` in batches of at most 4 MiB of expected content,
-      falling back to `DownloadObject` for `too_large`. Every call is bounded by
-      `--source-api-timeout`.
+- [ ] `lib-go/srcd/sourceapiclient`: a read of one ID calls `DownloadObject` directly, one round
+      trip at any size. A read of several IDs calls `GetObjectsMeta`, splits the objects up to 4 MiB
+      into `GetObjects` batches of at most 4 MiB, and calls `DownloadObject` for the rest.
+      `DownloadObject` streams into the local store through `objstore.Writer` rather than into
+      memory. Every call is bounded by `--source-api-timeout`.
 - [ ] `srcd.proto`:
   - `Store`: `ReadCommit`, `ReadTree`, `ReadSymlink` (`id → content`), `WriteCommit`, `WriteTree`,
     `WriteSymlink` (`content → id`), `ReadFile(id) → stream chunks`,
@@ -350,27 +414,30 @@ Outcome: the daemon serves `Store` and `OpStore` from local storage, with a fetc
     sees for the repo.
 - [ ] A fetched object is re-hashed and checked against the requested ID and kind before it's
       cached. A mismatch fails with `DataLoss` and isn't cached.
-- [ ] Writes are queued for upload once section 5 exists. Until then they stay in primary.
+- [ ] `ReadFile` and `WriteFile` go through `objstore.Open` and `objstore.Writer`, holding one chunk
+      in memory.
+- [ ] Writes are queued for upload once section 6 exists. Until then they stay in primary.
 
 Tests:
 
 - [ ] Integration (real in-process service): a write then a read hits local storage with the service
       stopped. A read miss fetches from the service and then works with the service stopped.
-- [ ] Integration: a 3 MiB blob is read through `DownloadObject` and streamed to the client in
+- [ ] Integration: a 9 MiB blob is read through `DownloadObject` and streamed to the client in
       chunks, and `WriteFile` accepts it streamed.
 - [ ] Integration: a service wrapper that returns corrupted content: the read fails with `DataLoss`
       and nothing is cached. A kind mismatch is rejected.
 - [ ] Integration: prefix resolution finds a unique op, and reports ambiguous and unknown prefixes.
       Op IDs are kept per repo and survive a daemon restart.
 
-## 5. Daemon uploads, op heads, repos and workspaces
+## 6. Daemon uploads, op heads, repos and workspaces
 
 Outcome: written objects reach the service in the background, and an operation is published only
 once everything written before it is uploaded.
 
 - [ ] `lib-go/srcd/uploader`:
-  - Each written object gets a sequence number. Batches of at most 4 MiB go through `HasObjects`,
-    then `PutObjects` for the missing ones. Objects over 1 MiB go through `UploadObject`.
+  - Each written object gets a sequence number. Batches of at most 4 MiB go through
+    `GetObjectsMeta`, then `PutObjects` for the missing ones. Objects over 4 MiB go through
+    `UploadObject`, read from `objstore.Open` a chunk at a time.
   - Once an upload is confirmed, the object moves from primary to cache.
   - At startup, it re-queues everything in primary.
   - Failures back off exponentially from 1 s to 60 s.
@@ -399,7 +466,7 @@ Tests:
 - [ ] Integration: two users through one daemon, one with two workspaces, publish to the same repo,
       and each workspace reads back only its own op heads.
 
-## 6. CLI encoding
+## 7. CLI encoding
 
 Outcome: the CLI encodes objects, operations and views exactly as stock jj does.
 
@@ -421,7 +488,7 @@ Tests:
       written through stock `SimpleOpStore` and through `op_proto`, give the same protobuf bytes and
       decode back.
 
-## 7. CLI store shims, repo and workspace commands, and defaults
+## 8. CLI store shims, repo and workspace commands, and defaults
 
 Outcome: `jjc cloud repo create` and `jjc cloud workspace create` make a working workspace, and jj
 history commands work in it.
@@ -467,7 +534,7 @@ history commands work in it.
 
 - [ ] `main.rs`: `add_store_factories`, `add_working_copy_factories` and `add_extra_config`. The
       `git init`, `git clone` and `debug init-simple` block stays.
-- [ ] Harness: `SourceApi::start` and `Daemon::start` pass temp `--data-dir`s.
+- [ ] Harness: `Daemon::start` passes a temp `--data-dir` (`SourceApi::start` does since section 2).
       `SourceApi::restart()` restarts on the same data dir and port. `TestEnv` sets jj's
       deterministic test variables (`JJ_RANDOMNESS_SEED`, `JJ_TIMESTAMP`, `JJ_OP_TIMESTAMP`,
       `JJ_OP_HOSTNAME`, `JJ_OP_USERNAME`) and a fixed `user.email`.
@@ -500,7 +567,7 @@ Tests:
   - The service killed, then `jj describe`: fails with the upload error. After
     `SourceApi::restart()`, `op log` shows no new operation and the same `describe` succeeds.
 
-## 8. Spec, roadmap and glossary updates
+## 9. Spec, roadmap and glossary updates
 
 After the code is in:
 
@@ -510,8 +577,7 @@ After the code is in:
   - Repository model: repo names. Workspaces, the registry and per-workspace op heads are already in
     the spec ([ADR 0001](../adr/0001-op-log-per-workspace.md)).
 - [ ] [source-api.md](../spec/source-api.md):
-  - `--data-dir`, the object files and `meta.db` tables behind the `Storage` interface, the object
-    write order, and the schema version check.
+  - `--data-dir`, the object files and `meta.db` tables, and the schema version check.
   - `CreateRepo`, the `NotFound`, `InvalidArgument` and `FailedPrecondition` cases, user key
     validation and encoding, message sizes and chunking. The workspace RPCs are already in the spec;
     check their errors match.

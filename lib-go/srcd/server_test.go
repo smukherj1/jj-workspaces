@@ -15,7 +15,9 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	srcdv1 "github.com/smukherj1/jj-workspaces/gen-go/jjc/srcd/v1"
+	"github.com/smukherj1/jj-workspaces/lib-go/objstore"
 	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi"
+	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi/metastore"
 	"github.com/smukherj1/jj-workspaces/lib-go/srcd/sourceapiclient"
 	"github.com/smukherj1/jj-workspaces/lib-go/version"
 )
@@ -123,7 +125,17 @@ func getStatus(t *testing.T, client srcdv1.DaemonClient) (*srcdv1.GetStatusRespo
 }
 
 func TestGetStatusServing(t *testing.T) {
-	api := sourceapi.NewServer()
+	dir := t.TempDir()
+	objects, err := objstore.Open(filepath.Join(dir, "objects"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, err := metastore.Open(filepath.Join(dir, "meta.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { meta.Close() })
+	api := sourceapi.NewServer(meta, objects)
 	addr := serve(t, api, func() { api.Shutdown(time.Second) })
 	resp, _ := getStatus(t, startDaemon(t, addr, 10*time.Second))
 

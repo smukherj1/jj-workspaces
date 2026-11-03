@@ -57,7 +57,7 @@ shim. The services are declared up front; each RPC is added in the milestone tha
 
 - **`Write*`** take raw serialized object bytes. The daemon computes the ID (SHA-1 with sha1dc, plus
   `(size, SHA-256)` for blobs), writes the object to the primary store (fsync'd), starts uploading
-  it in the background, deduplicating with `HasObjects`, and returns the ID.
+  it in the background, deduplicating with `GetObjectsMeta`, and returns the ID.
 - **`Read*`** are served from local storage, fetching from the service on a miss. There is no bulk
   commit-graph fetch: v1 histories are small (see [commit-index.md](commit-index.md)).
 
@@ -157,8 +157,10 @@ The daemon keeps two stores, shared by all workspaces on the machine:
 
 ## Source API client
 
-- **Fetching:** batch requests with `GetObjects`; Git trees don't record blob sizes, so for any ID
-  returned as `too_large(size)`, fetch the content with `DownloadObject`.
+- **Fetching:** a read of one ID calls `DownloadObject`, one round trip at any size. Git trees don't
+  record blob sizes, so a read of several IDs gets sizes from `GetObjectsMeta`, splits the objects
+  up to 4 MiB into `GetObjects` batches of at most 4 MiB of content, and fetches the rest with
+  `DownloadObject`.
 - **Errors:** cache hits work offline. Every service call has a bounded timeout and fails with a
   clear error, never hangs (R9).
 

@@ -46,15 +46,24 @@ fn bin_from_env(var: &str) -> PathBuf {
 pub struct SourceApi {
     process: Process,
     addr: String,
+    _data_dir: TempDir,
 }
 
 impl SourceApi {
-    /// Starts source-api on a free port.
+    /// Starts source-api on a free port, with a new temp data dir.
     pub fn start() -> Self {
+        let data_dir = TempDir::new().unwrap();
         let mut command = Command::new(source_api_bin());
-        command.args(["--listen", "127.0.0.1:0"]);
+        command
+            .args(["--listen", "127.0.0.1:0"])
+            .arg("--data-dir")
+            .arg(data_dir.path());
         let (process, addr) = Process::spawn("source-api", command);
-        Self { process, addr }
+        Self {
+            process,
+            addr,
+            _data_dir: data_dir,
+        }
     }
 
     /// The `host:port` source-api listens on.

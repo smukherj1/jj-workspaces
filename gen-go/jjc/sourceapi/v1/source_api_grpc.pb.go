@@ -7,7 +7,10 @@
 package sourceapiv1
 
 import (
+	context "context"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -135,10 +138,38 @@ var Workspace_ServiceDesc = grpc.ServiceDesc{
 	Metadata:    "jjc/sourceapi/v1/source_api.proto",
 }
 
+const (
+	Objects_PutObjects_FullMethodName     = "/jjc.sourceapi.v1.Objects/PutObjects"
+	Objects_UploadObject_FullMethodName   = "/jjc.sourceapi.v1.Objects/UploadObject"
+	Objects_GetObjectsMeta_FullMethodName = "/jjc.sourceapi.v1.Objects/GetObjectsMeta"
+	Objects_GetObjects_FullMethodName     = "/jjc.sourceapi.v1.Objects/GetObjects"
+	Objects_DownloadObject_FullMethodName = "/jjc.sourceapi.v1.Objects/DownloadObject"
+)
+
 // ObjectsClient is the client API for Objects service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Stores and serves objects. An object is (id, kind, content), with no Git header: the service
+// computes the header to verify the ID. Every message carries at most 4 MiB of content, as a batch
+// or a stream chunk, so objects over 4 MiB go through UploadObject and DownloadObject. The server
+// accepts messages up to 8 MiB, which leaves room for IDs and framing.
 type ObjectsClient interface {
+	// Stores a batch of objects. Each ID is re-hashed from its kind and content, and if any doesn't
+	// match, the whole batch is rejected with InvalidArgument naming the first bad ID. A batch over
+	// 4 MiB of content is rejected with InvalidArgument.
+	PutObjects(ctx context.Context, in *PutObjectsRequest, opts ...grpc.CallOption) (*PutObjectsResponse, error)
+	// Stores one object streamed in chunks: a header, then the content. Verified as PutObjects does,
+	// and InvalidArgument if the content's length isn't the header's size or a chunk is over 4 MiB.
+	UploadObject(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadObjectRequest, UploadObjectResponse], error)
+	// Returns whether each requested ID is stored and its content size, in request order. Callers use
+	// it to skip uploads the service already has and to split reads into batches that fit GetObjects.
+	GetObjectsMeta(ctx context.Context, in *GetObjectsMetaRequest, opts ...grpc.CallOption) (*GetObjectsMetaResponse, error)
+	// Returns the requested objects, in request order, or fails as a whole: NotFound naming the first
+	// unknown ID, or InvalidArgument if they're over 4 MiB of content in all.
+	GetObjects(ctx context.Context, in *GetObjectsRequest, opts ...grpc.CallOption) (*GetObjectsResponse, error)
+	// Streams one object: a header, then its content in 4 MiB chunks. NotFound for an unknown ID.
+	DownloadObject(ctx context.Context, in *DownloadObjectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadObjectResponse], error)
 }
 
 type objectsClient struct {
@@ -149,10 +180,92 @@ func NewObjectsClient(cc grpc.ClientConnInterface) ObjectsClient {
 	return &objectsClient{cc}
 }
 
+func (c *objectsClient) PutObjects(ctx context.Context, in *PutObjectsRequest, opts ...grpc.CallOption) (*PutObjectsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutObjectsResponse)
+	err := c.cc.Invoke(ctx, Objects_PutObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *objectsClient) UploadObject(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadObjectRequest, UploadObjectResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Objects_ServiceDesc.Streams[0], Objects_UploadObject_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[UploadObjectRequest, UploadObjectResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Objects_UploadObjectClient = grpc.ClientStreamingClient[UploadObjectRequest, UploadObjectResponse]
+
+func (c *objectsClient) GetObjectsMeta(ctx context.Context, in *GetObjectsMetaRequest, opts ...grpc.CallOption) (*GetObjectsMetaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetObjectsMetaResponse)
+	err := c.cc.Invoke(ctx, Objects_GetObjectsMeta_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *objectsClient) GetObjects(ctx context.Context, in *GetObjectsRequest, opts ...grpc.CallOption) (*GetObjectsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetObjectsResponse)
+	err := c.cc.Invoke(ctx, Objects_GetObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *objectsClient) DownloadObject(ctx context.Context, in *DownloadObjectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadObjectResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Objects_ServiceDesc.Streams[1], Objects_DownloadObject_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadObjectRequest, DownloadObjectResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Objects_DownloadObjectClient = grpc.ServerStreamingClient[DownloadObjectResponse]
+
 // ObjectsServer is the server API for Objects service.
 // All implementations must embed UnimplementedObjectsServer
 // for forward compatibility.
+//
+// Stores and serves objects. An object is (id, kind, content), with no Git header: the service
+// computes the header to verify the ID. Every message carries at most 4 MiB of content, as a batch
+// or a stream chunk, so objects over 4 MiB go through UploadObject and DownloadObject. The server
+// accepts messages up to 8 MiB, which leaves room for IDs and framing.
 type ObjectsServer interface {
+	// Stores a batch of objects. Each ID is re-hashed from its kind and content, and if any doesn't
+	// match, the whole batch is rejected with InvalidArgument naming the first bad ID. A batch over
+	// 4 MiB of content is rejected with InvalidArgument.
+	PutObjects(context.Context, *PutObjectsRequest) (*PutObjectsResponse, error)
+	// Stores one object streamed in chunks: a header, then the content. Verified as PutObjects does,
+	// and InvalidArgument if the content's length isn't the header's size or a chunk is over 4 MiB.
+	UploadObject(grpc.ClientStreamingServer[UploadObjectRequest, UploadObjectResponse]) error
+	// Returns whether each requested ID is stored and its content size, in request order. Callers use
+	// it to skip uploads the service already has and to split reads into batches that fit GetObjects.
+	GetObjectsMeta(context.Context, *GetObjectsMetaRequest) (*GetObjectsMetaResponse, error)
+	// Returns the requested objects, in request order, or fails as a whole: NotFound naming the first
+	// unknown ID, or InvalidArgument if they're over 4 MiB of content in all.
+	GetObjects(context.Context, *GetObjectsRequest) (*GetObjectsResponse, error)
+	// Streams one object: a header, then its content in 4 MiB chunks. NotFound for an unknown ID.
+	DownloadObject(*DownloadObjectRequest, grpc.ServerStreamingServer[DownloadObjectResponse]) error
 	mustEmbedUnimplementedObjectsServer()
 }
 
@@ -163,6 +276,21 @@ type ObjectsServer interface {
 // pointer dereference when methods are called.
 type UnimplementedObjectsServer struct{}
 
+func (UnimplementedObjectsServer) PutObjects(context.Context, *PutObjectsRequest) (*PutObjectsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutObjects not implemented")
+}
+func (UnimplementedObjectsServer) UploadObject(grpc.ClientStreamingServer[UploadObjectRequest, UploadObjectResponse]) error {
+	return status.Error(codes.Unimplemented, "method UploadObject not implemented")
+}
+func (UnimplementedObjectsServer) GetObjectsMeta(context.Context, *GetObjectsMetaRequest) (*GetObjectsMetaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetObjectsMeta not implemented")
+}
+func (UnimplementedObjectsServer) GetObjects(context.Context, *GetObjectsRequest) (*GetObjectsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetObjects not implemented")
+}
+func (UnimplementedObjectsServer) DownloadObject(*DownloadObjectRequest, grpc.ServerStreamingServer[DownloadObjectResponse]) error {
+	return status.Error(codes.Unimplemented, "method DownloadObject not implemented")
+}
 func (UnimplementedObjectsServer) mustEmbedUnimplementedObjectsServer() {}
 func (UnimplementedObjectsServer) testEmbeddedByValue()                 {}
 
@@ -184,15 +312,111 @@ func RegisterObjectsServer(s grpc.ServiceRegistrar, srv ObjectsServer) {
 	s.RegisterService(&Objects_ServiceDesc, srv)
 }
 
+func _Objects_PutObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ObjectsServer).PutObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Objects_PutObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ObjectsServer).PutObjects(ctx, req.(*PutObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Objects_UploadObject_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ObjectsServer).UploadObject(&grpc.GenericServerStream[UploadObjectRequest, UploadObjectResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Objects_UploadObjectServer = grpc.ClientStreamingServer[UploadObjectRequest, UploadObjectResponse]
+
+func _Objects_GetObjectsMeta_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetObjectsMetaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ObjectsServer).GetObjectsMeta(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Objects_GetObjectsMeta_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ObjectsServer).GetObjectsMeta(ctx, req.(*GetObjectsMetaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Objects_GetObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ObjectsServer).GetObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Objects_GetObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ObjectsServer).GetObjects(ctx, req.(*GetObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Objects_DownloadObject_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadObjectRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ObjectsServer).DownloadObject(m, &grpc.GenericServerStream[DownloadObjectRequest, DownloadObjectResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Objects_DownloadObjectServer = grpc.ServerStreamingServer[DownloadObjectResponse]
+
 // Objects_ServiceDesc is the grpc.ServiceDesc for Objects service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Objects_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jjc.sourceapi.v1.Objects",
 	HandlerType: (*ObjectsServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "jjc/sourceapi/v1/source_api.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PutObjects",
+			Handler:    _Objects_PutObjects_Handler,
+		},
+		{
+			MethodName: "GetObjectsMeta",
+			Handler:    _Objects_GetObjectsMeta_Handler,
+		},
+		{
+			MethodName: "GetObjects",
+			Handler:    _Objects_GetObjects_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "UploadObject",
+			Handler:       _Objects_UploadObject_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "DownloadObject",
+			Handler:       _Objects_DownloadObject_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "jjc/sourceapi/v1/source_api.proto",
 }
 
 // OpHeadsClient is the client API for OpHeads service.
