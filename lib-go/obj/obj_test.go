@@ -1,10 +1,14 @@
 package obj
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"os"
+	"slices"
 	"testing"
+
+	"github.com/pjbgf/sha1cd"
 
 	sourceapiv1 "github.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1"
 )
@@ -51,9 +55,81 @@ func shatteredPrefix(t *testing.T) []byte {
 	return b
 }
 
-func TestSumDetectsSHAttered(t *testing.T) {
-	if _, err := sum(shatteredPrefix(t)); !errors.Is(err, ErrCollision) {
-		t.Errorf("sum(shattered-1 prefix) error = %v, want ErrCollision", err)
+// The attack needs its blocks at their original offsets, which the Git header of a real object
+// moves, so this Hasher has no header.
+func TestHasherDetectsSHAttered(t *testing.T) {
+	h := &Hasher{sha1: sha1cd.New().(collisionResistantHash)}
+	prefix := shatteredPrefix(t)
+	h.Write(prefix[:100])
+	h.Write(prefix[100:])
+	if _, err := h.Sum(); !errors.Is(err, ErrCollision) {
+		t.Errorf("Sum of shattered-1 prefix error = %v, want ErrCollision", err)
+	}
+}
+
+// Streaming a blob to the Hasher gives the same digest as hashing it in one shot, whatever the chunk
+// size. The content spans many SHA-1 blocks, so chunks land on and across block boundaries.
+func TestHasherStreamingSupport(t *testing.T) {
+	content := bytes.Repeat([]byte("0123456789"), 10_000)
+	wantID, err := Hash(Blob, content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSHA256 := sha256.Sum256(content)
+	for _, chunkSize := range []int{10, 100} {
+		h, err := NewHasher(Blob, uint64(len(content)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for chunk := range slices.Chunk(content, chunkSize) {
+			h.Write(chunk)
+		}
+		d, err := h.Sum()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.ID != wantID {
+			t.Errorf("chunk size %d: ID = %s, want %s", chunkSize, d.ID, wantID)
+		}
+		if !bytes.Equal(d.SHA256, wantSHA256[:]) {
+			t.Errorf("chunk size %d: SHA-256 = %x, want %x", chunkSize, d.SHA256, wantSHA256)
+		}
+	}
+}
+
+func TestDigestHasSHA256OnlyForBlobs(t *testing.T) {
+	content := []byte("content")
+	for _, kind := range []Kind{Commit, Tree, Blob, Operation, View} {
+		want, err := Hash(kind, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, err := NewHasher(kind, uint64(len(content)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.Write(content)
+		d, err := h.Sum()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.ID != want {
+			t.Errorf("%v: ID = %s, want %s", kind, d.ID, want)
+		}
+		var wantSHA256 []byte
+		if kind == Blob {
+			sum := sha256.Sum256(content)
+			wantSHA256 = sum[:]
+		}
+		if !bytes.Equal(d.SHA256, wantSHA256) {
+			t.Errorf("%v: SHA-256 = %x, want %x", kind, d.SHA256, wantSHA256)
+		}
+	}
+}
+
+func TestNewHasherRejectsInvalidKind(t *testing.T) {
+	if _, err := NewHasher(0, 0); err == nil {
+		t.Error("NewHasher(0) succeeded")
 	}
 }
 
@@ -143,16 +219,5 @@ func TestID(t *testing.T) {
 	}
 	if RootID.Hex() != "0000000000000000000000000000000000000000" {
 		t.Errorf("RootID = %s", RootID.Hex())
-	}
-}
-
-func TestBlobMeta(t *testing.T) {
-	content := []byte("hello\n")
-	size, sha := BlobMeta(content)
-	if size != 6 {
-		t.Errorf("size = %d, want 6", size)
-	}
-	if sha != sha256.Sum256(content) {
-		t.Errorf("sha256 = %x", sha)
 	}
 }

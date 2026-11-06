@@ -137,20 +137,32 @@ func IDFromBytes(b []byte) (ID, error) {
 }
 
 // Header returns the Git header of an object: "<kind> <len>\x00".
-func Header(kind Kind, size int) []byte {
+func Header(kind Kind, size uint64) []byte {
 	return fmt.Appendf(nil, "%s %d\x00", kind, size)
 }
 
-// ErrCollision is returned by Hash when the content looks like part of a SHA-1 collision attack.
+// ErrCollision is returned when the content looks like part of a SHA-1 collision attack.
 var ErrCollision = errors.New("SHA-1 collision attack detected")
 
 // Hash returns the ID of an object: the SHA-1 of its Git header and content, as Git computes it.
 // It uses SHA-1 with collision detection and returns ErrCollision when it detects an attack.
 func Hash(kind Kind, content []byte) (ID, error) {
-	if !kind.Valid() {
-		return ID{}, fmt.Errorf("can't hash an object of invalid kind %v", kind)
+	h, err := NewHasher(kind, uint64(len(content)))
+	if err != nil {
+		return ID{}, err
 	}
-	return sum(Header(kind, len(content)), content)
+	h.Write(content)
+	d, err := h.Sum()
+	return d.ID, err
+}
+
+// Digest is what hashing an object gives.
+type Digest struct {
+	// ID is the object's ID.
+	ID ID
+	// SHA256 is the SHA-256 of a blob's content (the file bytes, without the header). It's nil for
+	// other kinds.
+	SHA256 []byte
 }
 
 // collisionResistantHash is the interface of sha1cd's hash.
@@ -159,22 +171,44 @@ type collisionResistantHash interface {
 	CollisionResistantSum(in []byte) ([]byte, bool)
 }
 
-// sum returns the SHA-1 of the concatenated parts, or ErrCollision if sha1cd detects an attack.
-func sum(parts ...[]byte) (ID, error) {
-	var id ID
-	h := sha1cd.New().(collisionResistantHash)
-	for _, p := range parts {
-		h.Write(p)
-	}
-	b, collision := h.CollisionResistantSum(nil)
-	if collision {
-		return id, ErrCollision
-	}
-	copy(id[:], b)
-	return id, nil
+// Hasher computes the Digest of an object whose content is written to it, so that an object doesn't
+// need to fit in memory. It's an io.Writer whose Write never fails.
+type Hasher struct {
+	sha1   collisionResistantHash
+	sha256 hash.Hash // nil unless the object is a blob.
 }
 
-// BlobMeta returns the size and SHA-256 of a blob's content (the file bytes, without the header).
-func BlobMeta(content []byte) (size uint64, sha [sha256.Size]byte) {
-	return uint64(len(content)), sha256.Sum256(content)
+// NewHasher returns a Hasher for an object of kind with size bytes of content.
+func NewHasher(kind Kind, size uint64) (*Hasher, error) {
+	if !kind.Valid() {
+		return nil, fmt.Errorf("can't hash an object of invalid kind %v", kind)
+	}
+	h := &Hasher{sha1: sha1cd.New().(collisionResistantHash)}
+	h.sha1.Write(Header(kind, size))
+	if kind == Blob {
+		h.sha256 = sha256.New()
+	}
+	return h, nil
+}
+
+// Write adds content to the hash.
+func (h *Hasher) Write(p []byte) (int, error) {
+	h.sha1.Write(p)
+	if h.sha256 != nil {
+		h.sha256.Write(p)
+	}
+	return len(p), nil
+}
+
+// Sum returns the object's Digest, or ErrCollision if sha1cd detects an attack.
+func (h *Hasher) Sum() (Digest, error) {
+	b, collision := h.sha1.CollisionResistantSum(nil)
+	if collision {
+		return Digest{}, ErrCollision
+	}
+	d := Digest{ID: ID(b)}
+	if h.sha256 != nil {
+		d.SHA256 = h.sha256.Sum(nil)
+	}
+	return d, nil
 }

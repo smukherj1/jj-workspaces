@@ -4,7 +4,6 @@
 package objstore
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -19,6 +18,10 @@ import (
 
 // ErrNotFound is returned, wrapped, for an object that isn't in the store.
 var ErrNotFound = errors.New("object not found")
+
+// errWriterClosed is returned, wrapped, for using a Writer whose object has been committed or
+// cleaned up.
+var errWriterClosed = errors.New("object writer is closed")
 
 // maxHeader bounds the Git header: "operation" plus a space, 20 digits and a NUL.
 const maxHeader = 32
@@ -64,69 +67,145 @@ func (s *Store) path(id obj.ID) (string, error) {
 // a crash leaves either the whole object or none of it. Putting an object that's already stored
 // overwrites it with the same bytes, which also repairs a corrupt file.
 func (s *Store) Put(id obj.ID, kind obj.Kind, content []byte) error {
-	if !kind.Valid() {
-		return fmt.Errorf("put object %s: invalid kind %v", id, kind)
-	}
-	if err := s.put(id, kind, content); err != nil {
+	w, cleanup, err := s.Create(kind, uint64(len(content)))
+	if err != nil {
 		return fmt.Errorf("put object %s: %w", id, err)
+	}
+	defer cleanup()
+	if _, err := w.Write(content); err != nil {
+		return fmt.Errorf("put object %s: %w", id, err)
+	}
+	return w.Commit(id)
+}
+
+// Writer writes one object's content to a temp file, so that an object doesn't need to fit in
+// memory. The object is stored only once Commit succeeds. After Commit, or the cleanup function
+// from Create, the Writer is closed and Write and Commit return an error.
+type Writer struct {
+	store   *Store
+	f       *os.File // nil once the temp file has been renamed or removed.
+	size    uint64
+	written uint64
+}
+
+// Create starts writing an object of kind with size bytes of content. It also returns a function
+// that discards the object and removes its temp file unless Commit has stored it. Calling it again
+// does nothing, so a caller defers it once Create succeeds. On error there's nothing to clean up
+// and the function is nil.
+func (s *Store) Create(kind obj.Kind, size uint64) (*Writer, func(), error) {
+	if !kind.Valid() {
+		return nil, nil, fmt.Errorf("create object: invalid kind %v", kind)
+	}
+	f, err := os.CreateTemp(s.tmpDir(), "obj-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create object: create temp file: %w", err)
+	}
+	w := &Writer{store: s, f: f, size: size}
+	if _, err := f.Write(obj.Header(kind, size)); err != nil {
+		w.cleanup()
+		return nil, nil, fmt.Errorf("create object: write header: %w", err)
+	}
+	return w, w.cleanup, nil
+}
+
+// Write appends content to the object.
+func (w *Writer) Write(p []byte) (int, error) {
+	if w.f == nil {
+		return 0, fmt.Errorf("write object content: %w", errWriterClosed)
+	}
+	n, err := w.f.Write(p)
+	w.written += uint64(n)
+	if err != nil {
+		return n, fmt.Errorf("write object content: %w", err)
+	}
+	return n, nil
+}
+
+// Commit stores the object under id: it fsyncs the temp file and renames it into place, so a crash
+// leaves either the whole object or none of it. If the object is already stored, it's overwritten.
+// Commit fails if the content written isn't the size given to Create, and on failure it removes the
+// temp file.
+func (w *Writer) Commit(id obj.ID) error {
+	if err := w.commit(id); err != nil {
+		w.cleanup()
+		return fmt.Errorf("commit object %s: %w", id, err)
 	}
 	return nil
 }
 
-func (s *Store) put(id obj.ID, kind obj.Kind, content []byte) (err error) {
-	dst, err := s.path(id)
+func (w *Writer) commit(id obj.ID) error {
+	if w.f == nil {
+		return errWriterClosed
+	}
+	if w.written != w.size {
+		return fmt.Errorf("%d bytes written, but the object is %d", w.written, w.size)
+	}
+	dst, err := w.store.path(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("determine storage path: %w", err)
 	}
-	f, err := os.CreateTemp(s.tmpDir(), "obj-")
+	if err := w.f.Sync(); err != nil {
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err := w.f.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("create shard directory: %w", err)
+	}
+	if err := os.Rename(w.f.Name(), dst); err != nil {
+		return fmt.Errorf("rename temp file into place: %w", err)
+	}
+	w.f = nil
+	if err := syncDir(filepath.Dir(dst)); err != nil {
+		return fmt.Errorf("sync shard directory: %w", err)
+	}
+	return nil
+}
+
+// cleanup discards the object and removes its temp file, if it's still there.
+func (w *Writer) cleanup() {
+	if w.f == nil {
+		return
+	}
+	w.f.Close()
+	os.Remove(w.f.Name())
+	w.f = nil
+}
+
+// Open returns an object's kind and content size, and a reader of its content that doesn't load it
+// into memory. The caller closes the reader. If the object is overwritten or removed meanwhile, the
+// reader keeps reading the bytes it opened: the open file holds the old inode until it's closed.
+func (s *Store) Open(id obj.ID) (obj.Kind, uint64, io.ReadCloser, error) {
+	p, err := s.path(id)
 	if err != nil {
-		return err
+		return 0, 0, nil, fmt.Errorf("open object: %w", err)
 	}
-	tmp := f.Name()
-	defer func() {
-		if err != nil {
-			f.Close()
-			os.Remove(tmp)
-		}
-	}()
-	if _, err = f.Write(obj.Header(kind, len(content))); err != nil {
-		return err
+	f, err := os.Open(p)
+	if err != nil {
+		return 0, 0, nil, s.wrap(id, err)
 	}
-	if _, err = f.Write(content); err != nil {
-		return err
+	kind, size, err := readHeader(f)
+	if err != nil {
+		f.Close()
+		return 0, 0, nil, fmt.Errorf("read object %s: %w", id, err)
 	}
-	if err = f.Sync(); err != nil {
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	if err = os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	if err = os.Rename(tmp, dst); err != nil {
-		return err
-	}
-	return syncDir(filepath.Dir(dst))
+	return kind, size, f, nil
 }
 
 // Get returns an object's kind and content.
 func (s *Store) Get(id obj.ID) (obj.Kind, []byte, error) {
-	p, err := s.path(id)
+	kind, size, r, err := s.Open(id)
 	if err != nil {
 		return 0, nil, err
 	}
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return 0, nil, s.wrap(id, err)
-	}
-	kind, size, n, err := parseHeader(b)
+	defer r.Close()
+	content, err := io.ReadAll(r)
 	if err != nil {
 		return 0, nil, fmt.Errorf("read object %s: %w", id, err)
 	}
-	content := b[n:]
 	if uint64(len(content)) != size {
-		return 0, nil, fmt.Errorf("read object %s: header says %d bytes, file has %d", id, size,
+		return 0, nil, fmt.Errorf("read object %s: header says %d bytes, read %d", id, size,
 			len(content))
 	}
 	return kind, content, nil
@@ -136,7 +215,7 @@ func (s *Store) Get(id obj.ID) (obj.Kind, []byte, error) {
 func (s *Store) Has(id obj.ID) (bool, error) {
 	p, err := s.path(id)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("stat object: %w", err)
 	}
 	_, err = os.Stat(p)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -150,23 +229,11 @@ func (s *Store) Has(id obj.ID) (bool, error) {
 
 // Size returns an object's kind and content size, reading only its header.
 func (s *Store) Size(id obj.ID) (obj.Kind, uint64, error) {
-	p, err := s.path(id)
+	kind, size, r, err := s.Open(id)
 	if err != nil {
 		return 0, 0, err
 	}
-	f, err := os.Open(p)
-	if err != nil {
-		return 0, 0, s.wrap(id, err)
-	}
-	defer f.Close()
-	b, err := bufio.NewReaderSize(f, maxHeader).Peek(maxHeader)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return 0, 0, fmt.Errorf("read object %s: %w", id, err)
-	}
-	kind, size, _, err := parseHeader(b)
-	if err != nil {
-		return 0, 0, fmt.Errorf("read object %s: %w", id, err)
-	}
+	r.Close()
 	return kind, size, nil
 }
 
@@ -174,7 +241,7 @@ func (s *Store) Size(id obj.ID) (obj.Kind, uint64, error) {
 func (s *Store) Remove(id obj.ID) error {
 	p, err := s.path(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("remove object: %w", err)
 	}
 	if err := os.Remove(p); err != nil {
 		return s.wrap(id, err)
@@ -189,11 +256,11 @@ func (s *Store) Remove(id obj.ID) error {
 func (s *Store) MoveTo(other *Store, id obj.ID) error {
 	src, err := s.path(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("move object: %w", err)
 	}
 	dst, err := other.path(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("move object: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("move object %s: %w", id, err)
@@ -245,6 +312,31 @@ func (s *Store) wrap(id obj.ID, err error) error {
 	return fmt.Errorf("object %s: %w", id, err)
 }
 
+// readHeader reads the Git header of an object file, checks it against the file's size and leaves
+// f at the start of the content.
+func readHeader(f *os.File) (obj.Kind, uint64, error) {
+	b := make([]byte, maxHeader)
+	n, err := f.ReadAt(b, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return 0, 0, fmt.Errorf("read header: %w", err)
+	}
+	kind, size, headerLen, err := parseHeader(b[:n])
+	if err != nil {
+		return 0, 0, fmt.Errorf("parse header: %w", err)
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return 0, 0, fmt.Errorf("stat file: %w", err)
+	}
+	if got := uint64(info.Size() - int64(headerLen)); got != size {
+		return 0, 0, fmt.Errorf("header says %d bytes, file has %d", size, got)
+	}
+	if _, err := f.Seek(int64(headerLen), io.SeekStart); err != nil {
+		return 0, 0, fmt.Errorf("seek past header: %w", err)
+	}
+	return kind, size, nil
+}
+
 // parseHeader parses the Git header at the start of b and returns the kind, the content size and
 // the header's length.
 func parseHeader(b []byte) (obj.Kind, uint64, int, error) {
@@ -271,8 +363,11 @@ func parseHeader(b []byte) (obj.Kind, uint64, int, error) {
 func syncDir(dir string) error {
 	d, err := os.Open(dir)
 	if err != nil {
-		return err
+		return fmt.Errorf("open directory: %w", err)
 	}
 	defer d.Close()
-	return d.Sync()
+	if err := d.Sync(); err != nil {
+		return fmt.Errorf("sync directory %s: %w", dir, err)
+	}
+	return nil
 }

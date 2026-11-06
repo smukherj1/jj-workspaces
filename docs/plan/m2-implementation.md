@@ -315,38 +315,40 @@ Tests:
       `NotFound` from `GetObjects`, and a later upload of it succeeds.
 - [x] Integration: a row whose file is gone is `Internal` from `GetObjects` and `DownloadObject`.
 
-## 3. Streamed object storage
+## 3. Streamed object storage (done)
 
 Outcome: `UploadObject` and `DownloadObject` move an object between the network and disk a chunk at
 a time, so a stream holds one chunk in memory whatever the object's size. Section 2's handlers load
 the whole object, which defeats the point of streaming.
 
-- [ ] `lib-go/obj`: `NewHasher(kind, size)`, an `io.Writer` over the content, with
+- [x] `lib-go/obj`: `NewHasher(kind, size) (*Hasher, error)`, an `io.Writer` over the content, with
       `Sum() (Digest, error)` returning `ErrCollision` as `Hash` does. `Digest` is `{ID, SHA256}`,
       with the SHA-256 set for blobs. `Hash` is built on it and still returns just the ID.
       `BlobMeta` goes.
-- [ ] `lib-go/objstore`:
-  - `Create(kind, size) (*Writer, error)` starts a temp file with the header. `Writer` has `Write`,
-    `Commit(id)` (fails if the bytes written aren't `size`, then fsync and rename, as `Put` does)
-    and `Abort()` (removes the temp file). `Put` is built on it.
+- [x] `lib-go/objstore`:
+  - `Create(kind, size) (*Writer, cleanup func(), error)` starts a temp file with the header.
+    `Writer` has `Write` and `Commit(id)` (fails if the bytes written aren't `size`, then fsync and
+    rename, as `Put` does). `cleanup` removes the temp file unless `Commit` stored it, and callers
+    defer it. A committed or cleaned-up `Writer` returns an error from `Write` and `Commit`. `Put`
+    is built on it.
   - `Open(id) (kind, size, io.ReadCloser, error)` reads the content without loading it.
-- [ ] `UploadObject` writes each chunk to an `objstore.Writer` and an `obj.NewHasher` as it arrives,
+- [x] `UploadObject` writes each chunk to an `objstore.Writer` and an `obj.NewHasher` as it arrives,
       and aborts on any error, including the client going away. It then verifies the ID, calls
       `Commit(id)` and calls `InsertObjects`. It doesn't check whether the object is already stored:
       the file is replaced with verified bytes and the row keeps its upload time.
-- [ ] `DownloadObject` calls `GetObjectsMeta`, then `objstore.Open`, checks kind and size against
+- [x] `DownloadObject` calls `GetObjectsMeta`, then `objstore.Open`, checks kind and size against
       the row, and reads into one 4 MiB buffer.
-- [ ] `PutObjects` and `GetObjects` stay in memory: they serve at most 4 MiB.
+- [x] `PutObjects` and `GetObjects` stay in memory: they serve at most 4 MiB.
 
 Tests:
 
-- [ ] Unit: `NewHasher` matches `Hash` with content split at various points, and reports the
+- [x] Unit: `NewHasher` matches `Hash` with content split at various points, and reports the
       collision `Hash` reports.
-- [ ] Unit: a `Writer` commit gives the same file as `Put`. A size mismatch and `Abort` leave no
-      object and no temp file.
-- [ ] Integration: while a 64 MiB blob uploads, the temp file holds the chunks received so far, and
+- [x] Unit: a `Writer` commit gives the same file as `Put`. A size mismatch and `cleanup` leave no
+      object and no temp file, and a finished `Writer` rejects further use.
+- [x] Integration: while a 64 MiB blob uploads, the temp file holds the chunks received so far, and
       the blob then downloads with the same bytes.
-- [ ] Integration: a client that cancels mid-upload leaves no temp file, no row and no object file.
+- [x] Integration: a client that cancels mid-upload leaves no temp file, no row and no object file.
       A tampered upload is rejected the same way.
 
 ## 4. Service repos, workspaces and op heads
