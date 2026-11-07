@@ -54,12 +54,14 @@ front; each RPC is added in the milestone that first needs it.
 | ------------------ | ------------------------------------------------------------------- |
 | `CreateRepo(repo)` | Record the repo; `AlreadyExists` if it exists. Creates no workspace |
 
+Repo names match `[A-Za-z0-9][A-Za-z0-9._-]{0,99}`; any other name is `InvalidArgument`.
+
 ### Workspace
 
 | RPC                                                       | Behavior                                                                                                                          |
 | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `CreateWorkspace(repo, user, name)`                       | Register a workspace with op heads `{root op ID}`; `AlreadyExists` if the user already has a workspace with that name in the repo |
-| `ListWorkspaces(repo, user) → workspaces[]`               | Return the user's workspaces in the repo, with each one's holder                                                                  |
+| `ListWorkspaces(repo, user) → names[]`                    | Return the names of the user's workspaces in the repo, in no particular order. M4 adds each one's holder                          |
 | `DeleteWorkspace(repo, user, name)`                       | Drop the workspace's registry entry and op heads; its objects stay                                                                |
 | `OpenWorkspace(repo, user, name, machine) → holder_token` | Make `machine` the workspace's holder, replacing any previous holder, and return a new holder token (M4)                          |
 
@@ -78,7 +80,7 @@ front; each RPC is added in the milestone that first needs it.
 
 | RPC                                                              | Behavior                                                                                                                                                                             |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `GetOpHeads(repo, user, workspace)`                              | Return the workspace's current op heads                                                                                                                                              |
+| `GetOpHeads(repo, user, workspace)`                              | Return the workspace's current op heads, in no particular order                                                                                                                      |
 | `UpdateOpHeads(repo, user, workspace, holder_token, old[], new)` | Atomically remove `old` from the workspace's op heads and add `new`; never fails because an `old` head is already gone; `FailedPrecondition` naming the holder if the token is stale |
 
 ### Trunk
@@ -93,10 +95,16 @@ front; each RPC is added in the milestone that first needs it.
 - **Upload verification:** `PutObjects` and `UploadObject` re-hash every object with
   collision-detecting SHA-1 (sha1dc) and reject any whose ID doesn't match, so a bad client can't
   corrupt the shared store. Blob metadata is computed at the same time.
-- **Users** aren't registered. The service rejects an empty user.
-- **Workspaces** are registered. Every op-heads call names the user and the workspace, returns
-  `NotFound` for a workspace that doesn't exist, and never sees or changes another workspace's op
-  heads. Workspace names follow the repo name rule.
+- **Users** aren't registered. Every workspace and op-heads call validates the user, an opaque key:
+  any non-empty string of at most 254 bytes with no control characters. Anything else is
+  `InvalidArgument`.
+- **Workspaces** are registered. Every workspace and op-heads call returns `NotFound` for an unknown
+  repo. Every op-heads call names the user and the workspace, returns `NotFound` for a workspace
+  that doesn't exist, and never sees or changes another workspace's op heads. Workspace names follow
+  the repo name rule.
+- **`UpdateOpHeads`** returns `FailedPrecondition` if `new` isn't stored as an operation, checked in
+  the same transaction as the update, so op heads never point to an operation the service doesn't
+  have. Adding a head that's already there is a no-op, so a retry after a lost reply is safe.
 - **Holder:** a workspace is open on one machine at a time (DESIGN). `OpenWorkspace` takes the hold
   without contacting the previous holder, and the previous holder's next `UpdateOpHeads` fails. A
   workspace with no holder, as before M4, accepts any token.

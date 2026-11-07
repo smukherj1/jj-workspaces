@@ -7,9 +7,26 @@ option go_package = "github.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1;
 // Services served by source-api to srcd. RPCs are added in the milestone that first needs them. See
 // docs/spec/source-api.md.
 
-service Repo {}
+// Creates repos. A repo name matches [A-Za-z0-9][A-Za-z0-9._-]{0,99}.
+service Repo {
+  // Records a repo. It creates no workspace. InvalidArgument if the name breaks the rule above, and
+  // AlreadyExists if the repo exists.
+  rpc CreateRepo(CreateRepoRequest) returns (CreateRepoResponse);
+}
 
-service Workspace {}
+// Keeps the registry of workspaces, keyed by (repo, user, name). A user is a non-empty string of at
+// most 254 bytes with no control characters, and any other user is InvalidArgument here and on
+// OpHeads. Users aren't registered. Calls fail with NotFound for an unknown repo.
+service Workspace {
+  // Registers a workspace with op heads {root op ID}. InvalidArgument if the name breaks the repo
+  // name rule, and AlreadyExists if the user has the workspace.
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  // Returns the names of the user's workspaces in the repo.
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  // Drops a workspace's registry entry and op heads. Its objects stay. NotFound for an unknown
+  // workspace.
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+}
 
 // Stores and serves objects. An object is (id, kind, content), with no Git header: the service
 // computes the header to verify the ID. Every message carries at most 4 MiB of content, as a batch
@@ -33,7 +50,15 @@ service Objects {
   rpc DownloadObject(DownloadObjectRequest) returns (stream DownloadObjectResponse);
 }
 
-service OpHeads {}
+// Keeps each workspace's op heads. Calls fail with NotFound for an unknown repo or workspace, and
+// never see or change another workspace's op heads, even the same user's.
+service OpHeads {
+  // Returns the workspace's op heads.
+  rpc GetOpHeads(GetOpHeadsRequest) returns (GetOpHeadsResponse);
+  // Atomically removes old_ids from the workspace's op heads, ignoring ones already gone, and adds
+  // new_id. FailedPrecondition if new_id isn't stored as an operation.
+  rpc UpdateOpHeads(UpdateOpHeadsRequest) returns (UpdateOpHeadsResponse);
+}
 
 service Trunk {}
 
@@ -137,3 +162,73 @@ message DownloadObjectHeader {
   // The content's length in bytes.
   uint64 size = 2;
 }
+
+message CreateRepoRequest {
+  // The repo's name.
+  string repo = 1;
+}
+
+message CreateRepoResponse {}
+
+message CreateWorkspaceRequest {
+  // The repo's name.
+  string repo = 1;
+  // The user who owns the workspace.
+  string user = 2;
+  // The workspace's name, unique per (repo, user). It follows the repo name rule.
+  string name = 3;
+}
+
+message CreateWorkspaceResponse {}
+
+message ListWorkspacesRequest {
+  // The repo's name.
+  string repo = 1;
+  // The user whose workspaces to list.
+  string user = 2;
+}
+
+message ListWorkspacesResponse {
+  // The names of the user's workspaces, in no particular order. Empty for a user with none.
+  repeated string names = 1;
+}
+
+message DeleteWorkspaceRequest {
+  // The repo's name.
+  string repo = 1;
+  // The user who owns the workspace.
+  string user = 2;
+  // The workspace's name.
+  string name = 3;
+}
+
+message DeleteWorkspaceResponse {}
+
+message GetOpHeadsRequest {
+  // The repo's name.
+  string repo = 1;
+  // The user who owns the workspace.
+  string user = 2;
+  // The workspace's name.
+  string workspace = 3;
+}
+
+message GetOpHeadsResponse {
+  // The 20-byte IDs of the workspace's op heads, in no particular order.
+  repeated bytes op_ids = 1;
+}
+
+message UpdateOpHeadsRequest {
+  // The repo's name.
+  string repo = 1;
+  // The user who owns the workspace.
+  string user = 2;
+  // The workspace's name.
+  string workspace = 3;
+  // The 20-byte IDs of the op heads to remove.
+  repeated bytes old_ids = 4;
+  // The 20-byte ID of the op head to add.
+  bytes new_id = 5;
+}
+
+message UpdateOpHeadsResponse {}

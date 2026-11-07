@@ -351,24 +351,24 @@ Tests:
 - [x] Integration: a client that cancels mid-upload leaves no temp file, no row and no object file.
       A tampered upload is rejected the same way.
 
-## 4. Service repos, workspaces and op heads
+## 4. Service repos, workspaces and op heads (done)
 
 Outcome: the service creates repos, keeps a registry of workspaces, and keeps each workspace's op
 heads with atomic updates. These are `metastore.Store` methods, since none of them touch object
 content; each transaction, including `UpdateOpHeads`'s operation row check, is one method.
 
-- [ ] `Repo.CreateRepo(repo)`: validates the name (`InvalidArgument`), inserts the repo row,
+- [x] `Repo.CreateRepo(repo)`: validates the name (`InvalidArgument`), inserts the repo row,
       `AlreadyExists` if the repo exists.
-- [ ] `Workspace.CreateWorkspace(repo, user, name)`: `NotFound` for an unknown repo,
+- [x] `Workspace.CreateWorkspace(repo, user, name)`: `NotFound` for an unknown repo,
       `InvalidArgument` for an invalid user or name, `AlreadyExists` if the user has the workspace.
       Inserts the workspace row and op heads `{root op ID}` in one transaction.
-- [ ] `Workspace.ListWorkspaces(repo, user) → names[]`: `NotFound` for an unknown repo, sorted
-      names, empty for a user with none.
-- [ ] `Workspace.DeleteWorkspace(repo, user, name)`: `NotFound` for an unknown repo or workspace.
+- [x] `Workspace.ListWorkspaces(repo, user) → names[]`: `NotFound` for an unknown repo, names in no
+      particular order, empty for a user with none.
+- [x] `Workspace.DeleteWorkspace(repo, user, name)`: `NotFound` for an unknown repo or workspace.
       Deletes the workspace row, and its op heads with it.
-- [ ] `OpHeads.GetOpHeads(repo, user, workspace) → op_ids[]`: `NotFound` for an unknown repo or
+- [x] `OpHeads.GetOpHeads(repo, user, workspace) → op_ids[]`: `NotFound` for an unknown repo or
       workspace, `InvalidArgument` for an invalid user.
-- [ ] `OpHeads.UpdateOpHeads(repo, user, workspace, old_ids[], new_id)`: `NotFound` for an unknown
+- [x] `OpHeads.UpdateOpHeads(repo, user, workspace, old_ids[], new_id)`: `NotFound` for an unknown
       repo or workspace, `InvalidArgument` for an invalid user, `FailedPrecondition` if `new_id`
       isn't stored as an operation. Removes `old_ids` from the workspace's op heads (ignoring ones
       already gone) and adds `new_id`, in one transaction with the check. The holder token comes in
@@ -376,20 +376,20 @@ content; each transaction, including `UpdateOpHeads`'s operation row check, is o
 
 Tests:
 
-- [ ] Integration: create repo, create workspace, get (`{root}`), update, get. `AlreadyExists` on a
+- [x] Integration: create repo, create workspace, get (`{root}`), update, get. `AlreadyExists` on a
       second create of either, and `InvalidArgument` for repo and workspace names `""`, `.x`, `a/b`
       and a 101-character name.
-- [ ] Integration: two workspaces of one user and one workspace of another user with the same name
+- [x] Integration: two workspaces of one user and one workspace of another user with the same name
       as one of them. Updates in one never change the others' op heads, and each new one reads
       `{root}`. `InvalidArgument` for an empty user and one with a newline. An email with `/`, `%`
       and `'` works as a user.
-- [ ] Integration: list returns only the user's workspaces. After delete, list omits it, both
+- [x] Integration: list returns only the user's workspaces. After delete, list omits it, both
       op-heads RPCs return `NotFound`, and the name can be created again starting at `{root}`.
-- [ ] Integration: `NotFound` from the workspace and op-heads RPCs for an unknown repo and an
+- [x] Integration: `NotFound` from the workspace and op-heads RPCs for an unknown repo and an
       unknown workspace, and `FailedPrecondition` for an op that isn't stored.
-- [ ] Integration: 20 parallel clients each publish an op to one workspace from the same old head.
+- [x] Integration: 20 parallel clients each publish an op to one workspace from the same old head.
       All 20 end up as its heads, and the root is gone.
-- [ ] Integration: the registry and op heads survive a restart.
+- [x] Integration: the registry and op heads survive a restart.
 
 ## 5. Daemon local store and reads and writes
 

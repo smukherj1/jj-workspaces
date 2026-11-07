@@ -196,7 +196,7 @@ func TestList(t *testing.T) {
 // tmpFiles returns the names of the temp files in the store.
 func tmpFiles(t *testing.T, s *Store) []string {
 	t.Helper()
-	entries, err := os.ReadDir(s.tmpDir())
+	entries, err := os.ReadDir(s.TempDir())
 	if err != nil {
 		t.Fatalf("read the temp dir: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestReaderOutlivesObject(t *testing.T) {
 func TestOpenRemovesTempFiles(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
-	if err := os.WriteFile(filepath.Join(s.tmpDir(), "obj-crashed"), []byte("partial"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(s.TempDir(), "obj-crashed"), []byte("partial"), 0o644); err != nil {
 		t.Fatalf("write a temp file as a crash would leave it: %v", err)
 	}
 	if names := tmpFiles(t, open(t, dir)); len(names) != 0 {

@@ -1,4 +1,4 @@
-package sourceapi
+package sourceapi_test
 
 import (
 	"bytes"
@@ -7,94 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/status"
 
 	sourceapiv1 "github.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1"
 	"github.com/smukherj1/jj-workspaces/lib-go/obj"
 	"github.com/smukherj1/jj-workspaces/lib-go/objstore"
-	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi/metastore"
+	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi"
+	"github.com/smukherj1/jj-workspaces/lib-go/sourceapi/sourceapitest"
 )
-
-// objectsServer is a running source-api on a data dir, with an Objects client for it and the
-// stores it serves from.
-type objectsServer struct {
-	client sourceapiv1.ObjectsClient
-	meta   *metastore.Store
-	files  *objstore.Store
-	stop   func()
-}
-
-// startObjects serves source-api on dataDir and returns an Objects client for it. stop shuts the
-// server down and closes its metadata store, so another can start on the same dir; it's also run at the
-// end of the test if it hasn't been.
-func startObjects(t *testing.T, dataDir string) *objectsServer {
-	t.Helper()
-	objects, err := objstore.Open(filepath.Join(dataDir, "objects"))
-	if err != nil {
-		t.Fatalf("open the object store: %v", err)
-	}
-	meta, err := metastore.Open(filepath.Join(dataDir, "meta.db"))
-	if err != nil {
-		t.Fatalf("open the metadata store: %v", err)
-	}
-	lis, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		t.Fatalf("listen on a free port: %v", err)
-	}
-	srv := NewServer(meta, objects)
-	served := make(chan error, 1)
-	go func() { served <- srv.Serve(lis) }()
-	conn, err := grpc.NewClient(lis.Addr().String(),
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(
-			grpc.MaxCallRecvMsgSize(MaxMessageSize), grpc.MaxCallSendMsgSize(MaxMessageSize)))
-	if err != nil {
-		t.Fatalf("create a client for the test server: %v", err)
-	}
-	stopped := false
-	stop := func() {
-		if stopped {
-			return
-		}
-		stopped = true
-		conn.Close()
-		srv.Shutdown(time.Second)
-		if err := <-served; err != nil {
-			t.Errorf("Serve: %v", err)
-		}
-		meta.Close()
-	}
-	t.Cleanup(stop)
-	return &objectsServer{
-		client: sourceapiv1.NewObjectsClient(conn), meta: meta, files: objects, stop: stop,
-	}
-}
-
-func testCtx(t *testing.T) context.Context {
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	t.Cleanup(cancel)
-	return ctx
-}
-
-// newObject returns a wire object with the right ID for kind and content.
-func newObject(t *testing.T, kind obj.Kind, content []byte) *sourceapiv1.Object {
-	t.Helper()
-	id, err := obj.Hash(kind, content)
-	if err != nil {
-		t.Fatalf("hash a %s of %d bytes: %v", kind, len(content), err)
-	}
-	return &sourceapiv1.Object{Id: id[:], Kind: kind.Proto(), Content: content}
-}
 
 // sampleObjects returns one object of each kind.
 func sampleObjects(t *testing.T) []*sourceapiv1.Object {
@@ -107,24 +32,10 @@ func sampleObjects(t *testing.T) []*sourceapiv1.Object {
 	}
 }
 
-func ids(objects []*sourceapiv1.Object) [][]byte {
-	out := make([][]byte, len(objects))
-	for i, o := range objects {
-		out[i] = o.GetId()
-	}
-	return out
-}
-
-func put(t *testing.T, c sourceapiv1.ObjectsClient, objects ...*sourceapiv1.Object) {
+// objectsMeta looks up idList with GetObjectsMeta and checks there's one entry for each.
+func objectsMeta(t *testing.T, h *sourceapitest.Harness, idList [][]byte) []*sourceapiv1.ObjectMeta {
 	t.Helper()
-	if _, err := c.PutObjects(testCtx(t), &sourceapiv1.PutObjectsRequest{Objects: objects}); err != nil {
-		t.Fatalf("PutObjects: %v", err)
-	}
-}
-
-func objectsMeta(t *testing.T, c sourceapiv1.ObjectsClient, idList [][]byte) []*sourceapiv1.ObjectMeta {
-	t.Helper()
-	resp, err := c.GetObjectsMeta(testCtx(t), &sourceapiv1.GetObjectsMetaRequest{Ids: idList})
+	resp, err := h.Objects().GetObjectsMeta(testCtx(t), &sourceapiv1.GetObjectsMetaRequest{Ids: idList})
 	if err != nil {
 		t.Fatalf("GetObjectsMeta: %v", err)
 	}
@@ -134,31 +45,10 @@ func objectsMeta(t *testing.T, c sourceapiv1.ObjectsClient, idList [][]byte) []*
 	return resp.GetObjects()
 }
 
-// checkGot checks that GetObjects returns each of objects, in order.
-func checkGot(t *testing.T, c sourceapiv1.ObjectsClient, objects []*sourceapiv1.Object) {
-	t.Helper()
-	resp, err := c.GetObjects(testCtx(t), &sourceapiv1.GetObjectsRequest{Ids: ids(objects)})
-	if err != nil {
-		t.Fatalf("GetObjects: %v", err)
-	}
-	if len(resp.GetObjects()) != len(objects) {
-		t.Fatalf("GetObjects returned %d objects for %d IDs", len(resp.GetObjects()), len(objects))
-	}
-	for i, got := range resp.GetObjects() {
-		want := objects[i]
-		if !bytes.Equal(got.GetId(), want.GetId()) || got.GetKind() != want.GetKind() ||
-			!bytes.Equal(got.GetContent(), want.GetContent()) {
-			t.Errorf("GetObjects object %d has ID %x and %d bytes, want ID %x and %d bytes", i,
-				got.GetId(), len(got.GetContent()), want.GetId(), len(want.GetContent()))
-		}
-	}
-}
-
 // upload streams an object to UploadObject: a header declaring size, then content in chunks.
-func upload(t *testing.T, c sourceapiv1.ObjectsClient, o *sourceapiv1.Object, size uint64,
-	chunk int) error {
+func upload(t *testing.T, h *sourceapitest.Harness, o *sourceapiv1.Object, size uint64, chunk int) error {
 	t.Helper()
-	stream, err := c.UploadObject(testCtx(t))
+	stream, err := h.Objects().UploadObject(testCtx(t))
 	if err != nil {
 		t.Fatalf("start UploadObject: %v", err)
 	}
@@ -187,11 +77,10 @@ func upload(t *testing.T, c sourceapiv1.ObjectsClient, o *sourceapiv1.Object, si
 }
 
 // download reads an object through DownloadObject and returns its header and content, checking
-// that no chunk is over MaxMessageContent.
-func download(t *testing.T, c sourceapiv1.ObjectsClient, id []byte) (*sourceapiv1.DownloadObjectHeader,
-	[]byte, error) {
+// that no chunk is over sourceapi.MaxMessageContent.
+func download(t *testing.T, h *sourceapitest.Harness, id []byte) (*sourceapiv1.DownloadObjectHeader, []byte, error) {
 	t.Helper()
-	stream, err := c.DownloadObject(testCtx(t), &sourceapiv1.DownloadObjectRequest{Id: id})
+	stream, err := h.Objects().DownloadObject(testCtx(t), &sourceapiv1.DownloadObjectRequest{Id: id})
 	if err != nil {
 		t.Fatalf("start DownloadObject: %v", err)
 	}
@@ -208,7 +97,7 @@ func download(t *testing.T, c sourceapiv1.ObjectsClient, id []byte) (*sourceapiv
 		if err != nil {
 			return nil, nil, err
 		}
-		if len(msg.GetChunk()) > MaxMessageContent {
+		if len(msg.GetChunk()) > sourceapi.MaxMessageContent {
 			t.Errorf("DownloadObject sent a %d-byte chunk", len(msg.GetChunk()))
 		}
 		content = append(content, msg.GetChunk()...)
@@ -231,20 +120,9 @@ func largeBlob(t *testing.T) *sourceapiv1.Object {
 	return blobOfSize(t, largeBlobSize, 0)
 }
 
-// wantStatus checks that an rpc failed with code and a message containing msgPart, without another
-// status's text nested in the message.
-func wantStatus(t *testing.T, rpc string, err error, code codes.Code, msgPart string) {
-	t.Helper()
-	msg := status.Convert(err).Message()
-	if status.Code(err) != code || !strings.Contains(msg, msgPart) || strings.Contains(msg, "rpc error:") {
-		t.Errorf("%s error = %v, want %v containing %q", rpc, err, code, msgPart)
-	}
-}
-
 // wantNotStored checks that none of objects with a well-formed ID is stored. after says what
 // happened that should have left them out, for the failure message.
-func wantNotStored(t *testing.T, c sourceapiv1.ObjectsClient, after string,
-	objects ...*sourceapiv1.Object) {
+func wantNotStored(t *testing.T, h *sourceapitest.Harness, after string, objects ...*sourceapiv1.Object) {
 	t.Helper()
 	var idList [][]byte
 	for _, o := range objects {
@@ -252,7 +130,7 @@ func wantNotStored(t *testing.T, c sourceapiv1.ObjectsClient, after string,
 			idList = append(idList, o.GetId())
 		}
 	}
-	for _, m := range objectsMeta(t, c, idList) {
+	for _, m := range objectsMeta(t, h, idList) {
 		if m.GetPresent() {
 			t.Errorf("after %s, object %x is stored, want none of %d objects stored", after, m.GetId(),
 				len(idList))
@@ -260,15 +138,15 @@ func wantNotStored(t *testing.T, c sourceapiv1.ObjectsClient, after string,
 	}
 }
 
-// checkBlobSHA256 checks that meta records the SHA-256 of each blob's content, and none for other
-// kinds.
-func checkBlobSHA256(t *testing.T, meta *metastore.Store, objects []*sourceapiv1.Object) {
+// checkBlobSHA256 checks that the metadata store records the SHA-256 of each blob's content, and
+// none for other kinds.
+func checkBlobSHA256(t *testing.T, h *sourceapitest.Harness, objects []*sourceapiv1.Object) {
 	t.Helper()
 	idList := make([]obj.ID, len(objects))
 	for i, o := range objects {
 		idList[i] = obj.ID(o.GetId())
 	}
-	metas, err := meta.GetObjectsMeta(testCtx(t), idList)
+	metas, err := h.MetaStore().GetObjectsMeta(testCtx(t), idList)
 	if err != nil {
 		t.Fatalf("look up rows in the metadata store: %v", err)
 	}
@@ -289,10 +167,10 @@ func hexID(o *sourceapiv1.Object) string {
 }
 
 // uploadStream starts an UploadObject stream for o and sends its header.
-func uploadStream(ctx context.Context, t *testing.T, c sourceapiv1.ObjectsClient,
+func uploadStream(ctx context.Context, t *testing.T, h *sourceapitest.Harness,
 	o *sourceapiv1.Object) grpc.ClientStreamingClient[sourceapiv1.UploadObjectRequest, sourceapiv1.UploadObjectResponse] {
 	t.Helper()
-	stream, err := c.UploadObject(ctx)
+	stream, err := h.Objects().UploadObject(ctx)
 	if err != nil {
 		t.Fatalf("start UploadObject: %v", err)
 	}
@@ -307,14 +185,14 @@ func uploadStream(ctx context.Context, t *testing.T, c sourceapiv1.ObjectsClient
 	return stream
 }
 
-// sendChunk sends chunk number i of content, in chunks of MaxMessageContent.
+// sendChunk sends chunk number i of content, in chunks of sourceapi.MaxMessageContent.
 func sendChunk(t *testing.T,
 	stream grpc.ClientStreamingClient[sourceapiv1.UploadObjectRequest, sourceapiv1.UploadObjectResponse],
 	content []byte, i int) {
 	t.Helper()
-	start := i * MaxMessageContent
+	start := i * sourceapi.MaxMessageContent
 	err := stream.Send(&sourceapiv1.UploadObjectRequest{
-		Msg: &sourceapiv1.UploadObjectRequest_Chunk{Chunk: content[start:min(start+MaxMessageContent, len(content))]},
+		Msg: &sourceapiv1.UploadObjectRequest_Chunk{Chunk: content[start:min(start+sourceapi.MaxMessageContent, len(content))]},
 	})
 	if err != nil {
 		t.Fatalf("send UploadObject chunk %d: %v", i, err)
@@ -334,9 +212,9 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 }
 
 // tmpFiles returns the temp files in the object store.
-func tmpFiles(t *testing.T, files *objstore.Store) []os.DirEntry {
+func tmpFiles(t *testing.T, h *sourceapitest.Harness) []os.DirEntry {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(files.Dir(), "tmp"))
+	entries, err := os.ReadDir(h.ObjStore().TempDir())
 	if err != nil {
 		t.Fatalf("read the object store's temp dir: %v", err)
 	}
@@ -344,83 +222,69 @@ func tmpFiles(t *testing.T, files *objstore.Store) []os.DirEntry {
 }
 
 // wantNoTrace checks that a failed upload of o left no temp file, no row and no object file.
-func wantNoTrace(t *testing.T, srv *objectsServer, o *sourceapiv1.Object) {
+func wantNoTrace(t *testing.T, h *sourceapitest.Harness, o *sourceapiv1.Object) {
 	t.Helper()
-	wantNoTempFiles(t, srv.files)
-	wantNotStored(t, srv.client, "a failed UploadObject", o)
-	if has, err := srv.files.Has(obj.ID(o.GetId())); err != nil || has {
+	wantNoTempFiles(t, h)
+	wantNotStored(t, h, "a failed UploadObject", o)
+	if has, err := h.ObjStore().Has(obj.ID(o.GetId())); err != nil || has {
 		t.Errorf("object file: Has = %v, %v", has, err)
 	}
 }
 
 // tamperFunc changes an object's file behind the server's back.
-type tamperFunc func(files *objstore.Store, o *sourceapiv1.Object) error
+type tamperFunc func(objStore *objstore.Store, o *sourceapiv1.Object) error
 
 // rewriteFile returns a tamperFunc that makes an object's file hold kind and content, leaving its
 // row, if it has one, as it was.
 func rewriteFile(kind obj.Kind, content []byte) tamperFunc {
-	return func(files *objstore.Store, o *sourceapiv1.Object) error {
-		return files.Put(obj.ID(o.GetId()), kind, content)
+	return func(objStore *objstore.Store, o *sourceapiv1.Object) error {
+		return objStore.Put(obj.ID(o.GetId()), kind, content)
 	}
 }
 
 // removeFile is a tamperFunc that deletes an object's file and leaves its row.
-func removeFile(files *objstore.Store, o *sourceapiv1.Object) error {
-	return files.Remove(obj.ID(o.GetId()))
+func removeFile(objStore *objstore.Store, o *sourceapiv1.Object) error {
+	return objStore.Remove(obj.ID(o.GetId()))
 }
 
 // storeAll stores objects as a client would: with PutObjects if they fit in a message and
 // UploadObject if they don't.
-func storeAll(t *testing.T, c sourceapiv1.ObjectsClient, objects ...*sourceapiv1.Object) {
+func storeAll(t *testing.T, h *sourceapitest.Harness, objects ...*sourceapiv1.Object) {
 	t.Helper()
 	for _, o := range objects {
-		if len(o.GetContent()) <= MaxMessageContent {
-			put(t, c, o)
+		if len(o.GetContent()) <= sourceapi.MaxMessageContent {
+			put(t, h, o)
 			continue
 		}
-		if err := upload(t, c, o, uint64(len(o.GetContent())), MaxMessageContent); err != nil {
+		if err := upload(t, h, o, uint64(len(o.GetContent())), sourceapi.MaxMessageContent); err != nil {
 			t.Fatalf("UploadObject of valid object %x: %v", o.GetId(), err)
 		}
 	}
 }
 
-// startWith starts a server on a new data dir holding stored. With restart set, it then replaces
-// that server with a new one on the same dir, so everything it serves came back from disk.
-func startWith(t *testing.T, stored []*sourceapiv1.Object, restart bool) *objectsServer {
-	t.Helper()
-	dir := t.TempDir()
-	srv := startObjects(t, dir)
-	storeAll(t, srv.client, stored...)
-	if restart {
-		srv.stop()
-		srv = startObjects(t, dir)
-	}
-	return srv
-}
-
 // tamper applies f, if there is one, to o in the server's object store.
-func tamper(t *testing.T, srv *objectsServer, f tamperFunc, o *sourceapiv1.Object) {
+func tamper(t *testing.T, h *sourceapitest.Harness, f tamperFunc, o *sourceapiv1.Object) {
 	t.Helper()
 	if f == nil {
 		return
 	}
-	if err := f(srv.files, o); err != nil {
+	if err := f(h.ObjStore(), o); err != nil {
 		t.Fatalf("tamper with the file of object %x: %v", o.GetId(), err)
 	}
 }
 
 // wantNoTempFiles checks that nothing is left in the object store's temp dir.
-func wantNoTempFiles(t *testing.T, files *objstore.Store) {
+func wantNoTempFiles(t *testing.T, h *sourceapitest.Harness) {
 	t.Helper()
-	if entries := tmpFiles(t, files); len(entries) != 0 {
+	if entries := tmpFiles(t, h); len(entries) != 0 {
 		t.Errorf("%d temp files left", len(entries))
 	}
 }
 
 // checkDownload checks that DownloadObject returns o's kind, size and content.
-func checkDownload(t *testing.T, c sourceapiv1.ObjectsClient, o *sourceapiv1.Object) {
+func checkDownload(t *testing.T, h *sourceapitest.Harness, o *sourceapiv1.Object) {
 	t.Helper()
-	header, content, err := download(t, c, o.GetId())
+	header, content, err := download(t, h, o.GetId())
 	if err != nil {
 		t.Fatalf("DownloadObject of stored object %x: %v", o.GetId(), err)
 	}
@@ -462,7 +326,7 @@ func TestPutObjects(t *testing.T) {
 		{name: "one of each kind", batch: samples},
 		{name: "repeated ID", batch: []*sourceapiv1.Object{blob, blob}},
 		{name: "batch at the content limit",
-			batch: []*sourceapiv1.Object{blobOfSize(t, MaxMessageContent, 3)}},
+			batch: []*sourceapiv1.Object{blobOfSize(t, sourceapi.MaxMessageContent, 3)}},
 		{name: "already stored", stored: samples, batch: samples},
 		// A crash between writing an object's file and its row leaves a file that counts as missing.
 		{name: "file without a row", tamper: rewriteFile(obj.Blob, fileOnly.GetContent()),
@@ -478,21 +342,22 @@ func TestPutObjects(t *testing.T) {
 		{name: "batch over the content limit", batch: []*sourceapiv1.Object{first, second},
 			wantMsg: "batch content is over the limit"},
 		{name: "object over the content limit",
-			batch:   []*sourceapiv1.Object{blobOfSize(t, MaxMessageContent+1, 0)},
+			batch:   []*sourceapiv1.Object{blobOfSize(t, sourceapi.MaxMessageContent+1, 0)},
 			wantMsg: "UploadObject"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup: a new server holding tc.stored, with its files tampered with if the case says so.
-			srv := startWith(t, tc.stored, false)
-			tamper(t, srv, tc.tamper, tc.batch[0])
+			h := newHarness(t)
+			storeAll(t, h, tc.stored...)
+			tamper(t, h, tc.tamper, tc.batch[0])
 
 			// Test: send the batch.
-			_, err := srv.client.PutObjects(testCtx(t), &sourceapiv1.PutObjectsRequest{Objects: tc.batch})
+			_, err := h.Objects().PutObjects(testCtx(t), &sourceapiv1.PutObjectsRequest{Objects: tc.batch})
 
 			// Expect: a rejected batch names its problem and stores nothing.
 			if tc.wantMsg != "" {
 				wantStatus(t, "PutObjects", err, codes.InvalidArgument, tc.wantMsg)
-				wantNotStored(t, srv.client, "a rejected PutObjects", tc.batch...)
+				wantNotStored(t, h, "a rejected PutObjects", tc.batch...)
 				return
 			}
 
@@ -500,8 +365,8 @@ func TestPutObjects(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PutObjects of a valid batch: %v", err)
 			}
-			checkGot(t, srv.client, tc.batch)
-			checkBlobSHA256(t, srv.meta, tc.batch)
+			checkGot(t, h, tc.batch)
+			checkBlobSHA256(t, h, tc.batch)
 		})
 	}
 }
@@ -515,7 +380,7 @@ func TestUploadObject(t *testing.T) {
 	tampered := newObject(t, obj.Blob, blob.GetContent())
 	tampered.Content = append([]byte{}, blob.GetContent()...)
 	tampered.Content[0]++
-	justOverChunk := blobOfSize(t, MaxMessageContent+1, 0)
+	justOverChunk := blobOfSize(t, sourceapi.MaxMessageContent+1, 0)
 
 	for _, tc := range []struct {
 		name   string
@@ -526,30 +391,31 @@ func TestUploadObject(t *testing.T) {
 		// wantMsg is part of the expected error, or empty if the upload should succeed.
 		wantMsg string
 	}{
-		{name: "new object", object: blob, size: n, chunk: MaxMessageContent},
+		{name: "new object", object: blob, size: n, chunk: sourceapi.MaxMessageContent},
 		// An object already stored goes through the same path as a new one, and keeps its row.
 		{name: "already stored", stored: []*sourceapiv1.Object{blob}, object: blob, size: n,
-			chunk: MaxMessageContent},
-		{name: "header size too large", object: blob, size: n + 1, chunk: MaxMessageContent,
+			chunk: sourceapi.MaxMessageContent},
+		{name: "header size too large", object: blob, size: n + 1, chunk: sourceapi.MaxMessageContent,
 			wantMsg: "header says"},
-		{name: "header size too small", object: blob, size: n - 1, chunk: MaxMessageContent,
+		{name: "header size too small", object: blob, size: n - 1, chunk: sourceapi.MaxMessageContent,
 			wantMsg: "longer than"},
-		{name: "content doesn't match ID", object: tampered, size: n, chunk: MaxMessageContent,
+		{name: "content doesn't match ID", object: tampered, size: n, chunk: sourceapi.MaxMessageContent,
 			wantMsg: "doesn't match"},
-		{name: "chunk over the limit", object: justOverChunk, size: MaxMessageContent + 1,
-			chunk: MaxMessageContent + 1, wantMsg: "over the limit"},
+		{name: "chunk over the limit", object: justOverChunk, size: sourceapi.MaxMessageContent + 1,
+			chunk: sourceapi.MaxMessageContent + 1, wantMsg: "over the limit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup: a new server holding tc.stored.
-			srv := startWith(t, tc.stored, false)
+			h := newHarness(t)
+			storeAll(t, h, tc.stored...)
 
 			// Test: send the header and every chunk.
-			err := upload(t, srv.client, tc.object, tc.size, tc.chunk)
+			err := upload(t, h, tc.object, tc.size, tc.chunk)
 
 			// Expect: a rejected upload names its problem and leaves nothing behind.
 			if tc.wantMsg != "" {
 				wantStatus(t, "UploadObject", err, codes.InvalidArgument, tc.wantMsg)
-				wantNoTrace(t, srv, tc.object)
+				wantNoTrace(t, h, tc.object)
 				return
 			}
 
@@ -557,9 +423,9 @@ func TestUploadObject(t *testing.T) {
 			if err != nil {
 				t.Fatalf("UploadObject of a valid object: %v", err)
 			}
-			checkDownload(t, srv.client, tc.object)
-			checkBlobSHA256(t, srv.meta, []*sourceapiv1.Object{tc.object})
-			wantNoTempFiles(t, srv.files)
+			checkDownload(t, h, tc.object)
+			checkBlobSHA256(t, h, []*sourceapiv1.Object{tc.object})
+			wantNoTempFiles(t, h)
 		})
 	}
 }
@@ -580,15 +446,15 @@ func TestUploadObject_midStream(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup: an empty server and a stream that has sent its header.
-			srv := startObjects(t, t.TempDir())
+			h := newHarness(t)
 			blob := blobOfSize(t, tc.size, 0)
 			header := len(obj.Header(obj.Blob, uint64(tc.size)))
 			ctx, cancel := context.WithCancel(testCtx(t))
 			defer cancel()
-			stream := uploadStream(ctx, t, srv.client, blob)
+			stream := uploadStream(ctx, t, h, blob)
 
 			// Test: send chunks one at a time.
-			chunks := (tc.size + MaxMessageContent - 1) / MaxMessageContent
+			chunks := (tc.size + sourceapi.MaxMessageContent - 1) / sourceapi.MaxMessageContent
 			if tc.cancelAfter > 0 {
 				chunks = tc.cancelAfter
 			}
@@ -596,9 +462,9 @@ func TestUploadObject_midStream(t *testing.T) {
 				sendChunk(t, stream, blob.GetContent(), i)
 
 				// Expect: the server's one temp file grows by that chunk before the next is sent.
-				want := int64(header + min((i+1)*MaxMessageContent, tc.size))
+				want := int64(header + min((i+1)*sourceapi.MaxMessageContent, tc.size))
 				waitFor(t, fmt.Sprintf("a %d-byte temp file", want), func() bool {
-					entries := tmpFiles(t, srv.files)
+					entries := tmpFiles(t, h)
 					if len(entries) > 1 {
 						t.Fatalf("%d temp files during the upload, want 1", len(entries))
 					}
@@ -614,8 +480,8 @@ func TestUploadObject_midStream(t *testing.T) {
 			// temp file and stores nothing.
 			if tc.cancelAfter > 0 {
 				cancel()
-				waitFor(t, "the temp file to go", func() bool { return len(tmpFiles(t, srv.files)) == 0 })
-				wantNoTrace(t, srv, blob)
+				waitFor(t, "the temp file to go", func() bool { return len(tmpFiles(t, h)) == 0 })
+				wantNoTrace(t, h, blob)
 				return
 			}
 
@@ -623,9 +489,9 @@ func TestUploadObject_midStream(t *testing.T) {
 			if _, err := stream.CloseAndRecv(); err != nil {
 				t.Fatalf("UploadObject of a valid object: %v", err)
 			}
-			checkDownload(t, srv.client, blob)
-			checkBlobSHA256(t, srv.meta, []*sourceapiv1.Object{blob})
-			wantNoTempFiles(t, srv.files)
+			checkDownload(t, h, blob)
+			checkBlobSHA256(t, h, []*sourceapiv1.Object{blob})
+			wantNoTempFiles(t, h)
 		})
 	}
 }
@@ -639,8 +505,9 @@ func TestGetObjectsMeta(t *testing.T) {
 	unknown := newObject(t, obj.Blob, []byte("never stored"))
 	fileOnly := newObject(t, obj.Blob, []byte("file only"))
 	large := largeBlob(t)
-	srv := startWith(t, []*sourceapiv1.Object{stored, empty, large}, false)
-	tamper(t, srv, rewriteFile(obj.Blob, fileOnly.GetContent()), fileOnly)
+	h := newHarness(t)
+	storeAll(t, h, stored, empty, large)
+	tamper(t, h, rewriteFile(obj.Blob, fileOnly.GetContent()), fileOnly)
 
 	type meta struct {
 		present bool
@@ -664,7 +531,7 @@ func TestGetObjectsMeta(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Test: look up the requested IDs. objectsMeta checks that there's one entry for each.
-			got := objectsMeta(t, srv.client, ids(tc.request))
+			got := objectsMeta(t, h, ids(tc.request))
 
 			// Expect: each entry is for the ID requested at its position, with the state expected.
 			for i, m := range got {
@@ -684,7 +551,7 @@ func TestGetObjectsMeta(t *testing.T) {
 func TestGetObjects(t *testing.T) {
 	samples := sampleObjects(t)
 	first, second := blobOfSize(t, 3<<20, 1), blobOfSize(t, 3<<20, 2)
-	rest := blobOfSize(t, MaxMessageContent-3<<20, 3)
+	rest := blobOfSize(t, sourceapi.MaxMessageContent-3<<20, 3)
 	large := largeBlob(t)
 	unknown := newObject(t, obj.Blob, []byte("never stored"))
 	fileOnly := newObject(t, obj.Blob, []byte("file only"))
@@ -734,17 +601,21 @@ func TestGetObjects(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup: a new server holding tc.stored, restarted and tampered with if the case says so.
-			srv := startWith(t, tc.stored, tc.restart)
-			tamper(t, srv, tc.tamper, tc.request[0])
+			h := newHarness(t)
+			storeAll(t, h, tc.stored...)
+			if tc.restart {
+				restart(t, h)
+			}
+			tamper(t, h, tc.tamper, tc.request[0])
 
 			// Test and expect: a valid request returns each object in order.
 			if tc.wantCode == codes.OK {
-				checkGot(t, srv.client, tc.request)
+				checkGot(t, h, tc.request)
 				return
 			}
 
 			// Test and expect: an invalid request fails with the expected status.
-			_, err := srv.client.GetObjects(testCtx(t),
+			_, err := h.Objects().GetObjects(testCtx(t),
 				&sourceapiv1.GetObjectsRequest{Ids: ids(tc.request)})
 			wantStatus(t, "GetObjects", err, tc.wantCode, tc.wantMsg)
 		})
@@ -792,17 +663,21 @@ func TestDownloadObject(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup: a new server holding tc.stored, restarted and tampered with if the case says so.
-			srv := startWith(t, tc.stored, tc.restart)
-			tamper(t, srv, tc.tamper, tc.object)
+			h := newHarness(t)
+			storeAll(t, h, tc.stored...)
+			if tc.restart {
+				restart(t, h)
+			}
+			tamper(t, h, tc.tamper, tc.object)
 
 			// Test and expect: a valid download returns the object's header and content.
 			if tc.wantCode == codes.OK {
-				checkDownload(t, srv.client, tc.object)
+				checkDownload(t, h, tc.object)
 				return
 			}
 
 			// Test and expect: an invalid download fails with the expected status.
-			_, _, err := download(t, srv.client, tc.object.GetId())
+			_, _, err := download(t, h, tc.object.GetId())
 			wantStatus(t, "DownloadObject", err, tc.wantCode, tc.wantMsg)
 		})
 	}

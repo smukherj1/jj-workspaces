@@ -38,21 +38,10 @@ type Server struct {
 	health *health.Server
 }
 
-// Services with no RPCs yet.
-type (
-	repoService struct {
-		sourceapiv1.UnimplementedRepoServer
-	}
-	workspaceService struct {
-		sourceapiv1.UnimplementedWorkspaceServer
-	}
-	opHeadsService struct {
-		sourceapiv1.UnimplementedOpHeadsServer
-	}
-	trunkService struct {
-		sourceapiv1.UnimplementedTrunkServer
-	}
-)
+// trunkService has no RPCs yet.
+type trunkService struct {
+	sourceapiv1.UnimplementedTrunkServer
+}
 
 // NewServer returns a server over meta and objects whose health status is SERVING for "" and for
 // each of serviceNames. The caller closes meta after the server stops.
@@ -64,10 +53,10 @@ func NewServer(meta *metastore.Store, objects *objstore.Store) *Server {
 		),
 		health: health.NewServer(),
 	}
-	sourceapiv1.RegisterRepoServer(s.grpc, &repoService{})
-	sourceapiv1.RegisterWorkspaceServer(s.grpc, &workspaceService{})
+	sourceapiv1.RegisterRepoServer(s.grpc, &repoService{meta: meta})
+	sourceapiv1.RegisterWorkspaceServer(s.grpc, &workspaceService{meta: meta})
 	sourceapiv1.RegisterObjectsServer(s.grpc, &objectsService{meta: meta, objects: objects})
-	sourceapiv1.RegisterOpHeadsServer(s.grpc, &opHeadsService{})
+	sourceapiv1.RegisterOpHeadsServer(s.grpc, &opHeadsService{meta: meta})
 	sourceapiv1.RegisterTrunkServer(s.grpc, &trunkService{})
 	healthpb.RegisterHealthServer(s.grpc, s.health)
 	s.health.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)

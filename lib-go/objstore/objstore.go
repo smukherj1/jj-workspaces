@@ -35,10 +35,10 @@ type Store struct {
 // Open opens the store in dir, creating it if needed, and removes temp files a crash left behind.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir}
-	if err := os.RemoveAll(s.tmpDir()); err != nil {
+	if err := os.RemoveAll(s.TempDir()); err != nil {
 		return nil, fmt.Errorf("clean up object temp files: %w", err)
 	}
-	if err := os.MkdirAll(s.tmpDir(), 0o755); err != nil {
+	if err := os.MkdirAll(s.TempDir(), 0o755); err != nil {
 		return nil, fmt.Errorf("create object store: %w", err)
 	}
 	return s, nil
@@ -49,7 +49,8 @@ func (s *Store) Dir() string {
 	return s.dir
 }
 
-func (s *Store) tmpDir() string {
+// TempDir returns the directory that holds objects being written, before they're committed.
+func (s *Store) TempDir() string {
 	return filepath.Join(s.dir, "tmp")
 }
 
@@ -96,7 +97,7 @@ func (s *Store) Create(kind obj.Kind, size uint64) (*Writer, func(), error) {
 	if !kind.Valid() {
 		return nil, nil, fmt.Errorf("create object: invalid kind %v", kind)
 	}
-	f, err := os.CreateTemp(s.tmpDir(), "obj-")
+	f, err := os.CreateTemp(s.TempDir(), "obj-")
 	if err != nil {
 		return nil, nil, fmt.Errorf("create object: create temp file: %w", err)
 	}

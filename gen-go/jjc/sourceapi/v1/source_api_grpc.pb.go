@@ -18,10 +18,19 @@ import (
 // Requires gRPC-Go v1.64.0 or later.
 const _ = grpc.SupportPackageIsVersion9
 
+const (
+	Repo_CreateRepo_FullMethodName = "/jjc.sourceapi.v1.Repo/CreateRepo"
+)
+
 // RepoClient is the client API for Repo service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Creates repos. A repo name matches [A-Za-z0-9][A-Za-z0-9._-]{0,99}.
 type RepoClient interface {
+	// Records a repo. It creates no workspace. InvalidArgument if the name breaks the rule above, and
+	// AlreadyExists if the repo exists.
+	CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error)
 }
 
 type repoClient struct {
@@ -32,10 +41,25 @@ func NewRepoClient(cc grpc.ClientConnInterface) RepoClient {
 	return &repoClient{cc}
 }
 
+func (c *repoClient) CreateRepo(ctx context.Context, in *CreateRepoRequest, opts ...grpc.CallOption) (*CreateRepoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateRepoResponse)
+	err := c.cc.Invoke(ctx, Repo_CreateRepo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RepoServer is the server API for Repo service.
 // All implementations must embed UnimplementedRepoServer
 // for forward compatibility.
+//
+// Creates repos. A repo name matches [A-Za-z0-9][A-Za-z0-9._-]{0,99}.
 type RepoServer interface {
+	// Records a repo. It creates no workspace. InvalidArgument if the name breaks the rule above, and
+	// AlreadyExists if the repo exists.
+	CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error)
 	mustEmbedUnimplementedRepoServer()
 }
 
@@ -46,6 +70,9 @@ type RepoServer interface {
 // pointer dereference when methods are called.
 type UnimplementedRepoServer struct{}
 
+func (UnimplementedRepoServer) CreateRepo(context.Context, *CreateRepoRequest) (*CreateRepoResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateRepo not implemented")
+}
 func (UnimplementedRepoServer) mustEmbedUnimplementedRepoServer() {}
 func (UnimplementedRepoServer) testEmbeddedByValue()              {}
 
@@ -67,21 +94,62 @@ func RegisterRepoServer(s grpc.ServiceRegistrar, srv RepoServer) {
 	s.RegisterService(&Repo_ServiceDesc, srv)
 }
 
+func _Repo_CreateRepo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateRepoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RepoServer).CreateRepo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Repo_CreateRepo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RepoServer).CreateRepo(ctx, req.(*CreateRepoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Repo_ServiceDesc is the grpc.ServiceDesc for Repo service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Repo_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jjc.sourceapi.v1.Repo",
 	HandlerType: (*RepoServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "jjc/sourceapi/v1/source_api.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateRepo",
+			Handler:    _Repo_CreateRepo_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "jjc/sourceapi/v1/source_api.proto",
 }
+
+const (
+	Workspace_CreateWorkspace_FullMethodName = "/jjc.sourceapi.v1.Workspace/CreateWorkspace"
+	Workspace_ListWorkspaces_FullMethodName  = "/jjc.sourceapi.v1.Workspace/ListWorkspaces"
+	Workspace_DeleteWorkspace_FullMethodName = "/jjc.sourceapi.v1.Workspace/DeleteWorkspace"
+)
 
 // WorkspaceClient is the client API for Workspace service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Keeps the registry of workspaces, keyed by (repo, user, name). A user is a non-empty string of at
+// most 254 bytes with no control characters, and any other user is InvalidArgument here and on
+// OpHeads. Users aren't registered. Calls fail with NotFound for an unknown repo.
 type WorkspaceClient interface {
+	// Registers a workspace with op heads {root op ID}. InvalidArgument if the name breaks the repo
+	// name rule, and AlreadyExists if the user has the workspace.
+	CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error)
+	// Returns the names of the user's workspaces in the repo.
+	ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error)
+	// Drops a workspace's registry entry and op heads. Its objects stay. NotFound for an unknown
+	// workspace.
+	DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error)
 }
 
 type workspaceClient struct {
@@ -92,10 +160,52 @@ func NewWorkspaceClient(cc grpc.ClientConnInterface) WorkspaceClient {
 	return &workspaceClient{cc}
 }
 
+func (c *workspaceClient) CreateWorkspace(ctx context.Context, in *CreateWorkspaceRequest, opts ...grpc.CallOption) (*CreateWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateWorkspaceResponse)
+	err := c.cc.Invoke(ctx, Workspace_CreateWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspaceClient) ListWorkspaces(ctx context.Context, in *ListWorkspacesRequest, opts ...grpc.CallOption) (*ListWorkspacesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListWorkspacesResponse)
+	err := c.cc.Invoke(ctx, Workspace_ListWorkspaces_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workspaceClient) DeleteWorkspace(ctx context.Context, in *DeleteWorkspaceRequest, opts ...grpc.CallOption) (*DeleteWorkspaceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteWorkspaceResponse)
+	err := c.cc.Invoke(ctx, Workspace_DeleteWorkspace_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WorkspaceServer is the server API for Workspace service.
 // All implementations must embed UnimplementedWorkspaceServer
 // for forward compatibility.
+//
+// Keeps the registry of workspaces, keyed by (repo, user, name). A user is a non-empty string of at
+// most 254 bytes with no control characters, and any other user is InvalidArgument here and on
+// OpHeads. Users aren't registered. Calls fail with NotFound for an unknown repo.
 type WorkspaceServer interface {
+	// Registers a workspace with op heads {root op ID}. InvalidArgument if the name breaks the repo
+	// name rule, and AlreadyExists if the user has the workspace.
+	CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error)
+	// Returns the names of the user's workspaces in the repo.
+	ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error)
+	// Drops a workspace's registry entry and op heads. Its objects stay. NotFound for an unknown
+	// workspace.
+	DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error)
 	mustEmbedUnimplementedWorkspaceServer()
 }
 
@@ -106,6 +216,15 @@ type WorkspaceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedWorkspaceServer struct{}
 
+func (UnimplementedWorkspaceServer) CreateWorkspace(context.Context, *CreateWorkspaceRequest) (*CreateWorkspaceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateWorkspace not implemented")
+}
+func (UnimplementedWorkspaceServer) ListWorkspaces(context.Context, *ListWorkspacesRequest) (*ListWorkspacesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListWorkspaces not implemented")
+}
+func (UnimplementedWorkspaceServer) DeleteWorkspace(context.Context, *DeleteWorkspaceRequest) (*DeleteWorkspaceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteWorkspace not implemented")
+}
 func (UnimplementedWorkspaceServer) mustEmbedUnimplementedWorkspaceServer() {}
 func (UnimplementedWorkspaceServer) testEmbeddedByValue()                   {}
 
@@ -127,15 +246,82 @@ func RegisterWorkspaceServer(s grpc.ServiceRegistrar, srv WorkspaceServer) {
 	s.RegisterService(&Workspace_ServiceDesc, srv)
 }
 
+func _Workspace_CreateWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspaceServer).CreateWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Workspace_CreateWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspaceServer).CreateWorkspace(ctx, req.(*CreateWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Workspace_ListWorkspaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListWorkspacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspaceServer).ListWorkspaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Workspace_ListWorkspaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspaceServer).ListWorkspaces(ctx, req.(*ListWorkspacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Workspace_DeleteWorkspace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteWorkspaceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkspaceServer).DeleteWorkspace(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Workspace_DeleteWorkspace_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkspaceServer).DeleteWorkspace(ctx, req.(*DeleteWorkspaceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Workspace_ServiceDesc is the grpc.ServiceDesc for Workspace service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Workspace_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jjc.sourceapi.v1.Workspace",
 	HandlerType: (*WorkspaceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "jjc/sourceapi/v1/source_api.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateWorkspace",
+			Handler:    _Workspace_CreateWorkspace_Handler,
+		},
+		{
+			MethodName: "ListWorkspaces",
+			Handler:    _Workspace_ListWorkspaces_Handler,
+		},
+		{
+			MethodName: "DeleteWorkspace",
+			Handler:    _Workspace_DeleteWorkspace_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "jjc/sourceapi/v1/source_api.proto",
 }
 
 const (
@@ -419,10 +605,23 @@ var Objects_ServiceDesc = grpc.ServiceDesc{
 	Metadata: "jjc/sourceapi/v1/source_api.proto",
 }
 
+const (
+	OpHeads_GetOpHeads_FullMethodName    = "/jjc.sourceapi.v1.OpHeads/GetOpHeads"
+	OpHeads_UpdateOpHeads_FullMethodName = "/jjc.sourceapi.v1.OpHeads/UpdateOpHeads"
+)
+
 // OpHeadsClient is the client API for OpHeads service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Keeps each workspace's op heads. Calls fail with NotFound for an unknown repo or workspace, and
+// never see or change another workspace's op heads, even the same user's.
 type OpHeadsClient interface {
+	// Returns the workspace's op heads.
+	GetOpHeads(ctx context.Context, in *GetOpHeadsRequest, opts ...grpc.CallOption) (*GetOpHeadsResponse, error)
+	// Atomically removes old_ids from the workspace's op heads, ignoring ones already gone, and adds
+	// new_id. FailedPrecondition if new_id isn't stored as an operation.
+	UpdateOpHeads(ctx context.Context, in *UpdateOpHeadsRequest, opts ...grpc.CallOption) (*UpdateOpHeadsResponse, error)
 }
 
 type opHeadsClient struct {
@@ -433,10 +632,38 @@ func NewOpHeadsClient(cc grpc.ClientConnInterface) OpHeadsClient {
 	return &opHeadsClient{cc}
 }
 
+func (c *opHeadsClient) GetOpHeads(ctx context.Context, in *GetOpHeadsRequest, opts ...grpc.CallOption) (*GetOpHeadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOpHeadsResponse)
+	err := c.cc.Invoke(ctx, OpHeads_GetOpHeads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *opHeadsClient) UpdateOpHeads(ctx context.Context, in *UpdateOpHeadsRequest, opts ...grpc.CallOption) (*UpdateOpHeadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateOpHeadsResponse)
+	err := c.cc.Invoke(ctx, OpHeads_UpdateOpHeads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // OpHeadsServer is the server API for OpHeads service.
 // All implementations must embed UnimplementedOpHeadsServer
 // for forward compatibility.
+//
+// Keeps each workspace's op heads. Calls fail with NotFound for an unknown repo or workspace, and
+// never see or change another workspace's op heads, even the same user's.
 type OpHeadsServer interface {
+	// Returns the workspace's op heads.
+	GetOpHeads(context.Context, *GetOpHeadsRequest) (*GetOpHeadsResponse, error)
+	// Atomically removes old_ids from the workspace's op heads, ignoring ones already gone, and adds
+	// new_id. FailedPrecondition if new_id isn't stored as an operation.
+	UpdateOpHeads(context.Context, *UpdateOpHeadsRequest) (*UpdateOpHeadsResponse, error)
 	mustEmbedUnimplementedOpHeadsServer()
 }
 
@@ -447,6 +674,12 @@ type OpHeadsServer interface {
 // pointer dereference when methods are called.
 type UnimplementedOpHeadsServer struct{}
 
+func (UnimplementedOpHeadsServer) GetOpHeads(context.Context, *GetOpHeadsRequest) (*GetOpHeadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOpHeads not implemented")
+}
+func (UnimplementedOpHeadsServer) UpdateOpHeads(context.Context, *UpdateOpHeadsRequest) (*UpdateOpHeadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateOpHeads not implemented")
+}
 func (UnimplementedOpHeadsServer) mustEmbedUnimplementedOpHeadsServer() {}
 func (UnimplementedOpHeadsServer) testEmbeddedByValue()                 {}
 
@@ -468,15 +701,60 @@ func RegisterOpHeadsServer(s grpc.ServiceRegistrar, srv OpHeadsServer) {
 	s.RegisterService(&OpHeads_ServiceDesc, srv)
 }
 
+func _OpHeads_GetOpHeads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOpHeadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OpHeadsServer).GetOpHeads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OpHeads_GetOpHeads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OpHeadsServer).GetOpHeads(ctx, req.(*GetOpHeadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _OpHeads_UpdateOpHeads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateOpHeadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OpHeadsServer).UpdateOpHeads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: OpHeads_UpdateOpHeads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OpHeadsServer).UpdateOpHeads(ctx, req.(*UpdateOpHeadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // OpHeads_ServiceDesc is the grpc.ServiceDesc for OpHeads service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var OpHeads_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "jjc.sourceapi.v1.OpHeads",
 	HandlerType: (*OpHeadsServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "jjc/sourceapi/v1/source_api.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetOpHeads",
+			Handler:    _OpHeads_GetOpHeads_Handler,
+		},
+		{
+			MethodName: "UpdateOpHeads",
+			Handler:    _OpHeads_UpdateOpHeads_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "jjc/sourceapi/v1/source_api.proto",
 }
 
 // TrunkClient is the client API for Trunk service.

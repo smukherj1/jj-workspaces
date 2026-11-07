@@ -838,6 +838,609 @@ func (x *DownloadObjectHeader) GetSize() uint64 {
 	return 0
 }
 
+type CreateRepoRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo          string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRepoRequest) Reset() {
+	*x = CreateRepoRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRepoRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRepoRequest) ProtoMessage() {}
+
+func (x *CreateRepoRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRepoRequest.ProtoReflect.Descriptor instead.
+func (*CreateRepoRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CreateRepoRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+type CreateRepoResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateRepoResponse) Reset() {
+	*x = CreateRepoResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateRepoResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateRepoResponse) ProtoMessage() {}
+
+func (x *CreateRepoResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateRepoResponse.ProtoReflect.Descriptor instead.
+func (*CreateRepoResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{15}
+}
+
+type CreateWorkspaceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// The user who owns the workspace.
+	User string `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	// The workspace's name, unique per (repo, user). It follows the repo name rule.
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceRequest) Reset() {
+	*x = CreateWorkspaceRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceRequest) ProtoMessage() {}
+
+func (x *CreateWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CreateWorkspaceRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *CreateWorkspaceRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type CreateWorkspaceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateWorkspaceResponse) Reset() {
+	*x = CreateWorkspaceResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateWorkspaceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateWorkspaceResponse) ProtoMessage() {}
+
+func (x *CreateWorkspaceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateWorkspaceResponse.ProtoReflect.Descriptor instead.
+func (*CreateWorkspaceResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{17}
+}
+
+type ListWorkspacesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// The user whose workspaces to list.
+	User          string `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspacesRequest) Reset() {
+	*x = ListWorkspacesRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspacesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspacesRequest) ProtoMessage() {}
+
+func (x *ListWorkspacesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspacesRequest.ProtoReflect.Descriptor instead.
+func (*ListWorkspacesRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ListWorkspacesRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *ListWorkspacesRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+type ListWorkspacesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The names of the user's workspaces, in no particular order. Empty for a user with none.
+	Names         []string `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListWorkspacesResponse) Reset() {
+	*x = ListWorkspacesResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListWorkspacesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListWorkspacesResponse) ProtoMessage() {}
+
+func (x *ListWorkspacesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListWorkspacesResponse.ProtoReflect.Descriptor instead.
+func (*ListWorkspacesResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ListWorkspacesResponse) GetNames() []string {
+	if x != nil {
+		return x.Names
+	}
+	return nil
+}
+
+type DeleteWorkspaceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// The user who owns the workspace.
+	User string `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	// The workspace's name.
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkspaceRequest) Reset() {
+	*x = DeleteWorkspaceRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkspaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkspaceRequest) ProtoMessage() {}
+
+func (x *DeleteWorkspaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkspaceRequest.ProtoReflect.Descriptor instead.
+func (*DeleteWorkspaceRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeleteWorkspaceRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *DeleteWorkspaceRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *DeleteWorkspaceRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type DeleteWorkspaceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteWorkspaceResponse) Reset() {
+	*x = DeleteWorkspaceResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteWorkspaceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteWorkspaceResponse) ProtoMessage() {}
+
+func (x *DeleteWorkspaceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteWorkspaceResponse.ProtoReflect.Descriptor instead.
+func (*DeleteWorkspaceResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{21}
+}
+
+type GetOpHeadsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// The user who owns the workspace.
+	User string `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	// The workspace's name.
+	Workspace     string `protobuf:"bytes,3,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOpHeadsRequest) Reset() {
+	*x = GetOpHeadsRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOpHeadsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOpHeadsRequest) ProtoMessage() {}
+
+func (x *GetOpHeadsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOpHeadsRequest.ProtoReflect.Descriptor instead.
+func (*GetOpHeadsRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *GetOpHeadsRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *GetOpHeadsRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *GetOpHeadsRequest) GetWorkspace() string {
+	if x != nil {
+		return x.Workspace
+	}
+	return ""
+}
+
+type GetOpHeadsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The 20-byte IDs of the workspace's op heads, in no particular order.
+	OpIds         [][]byte `protobuf:"bytes,1,rep,name=op_ids,json=opIds,proto3" json:"op_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetOpHeadsResponse) Reset() {
+	*x = GetOpHeadsResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetOpHeadsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetOpHeadsResponse) ProtoMessage() {}
+
+func (x *GetOpHeadsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetOpHeadsResponse.ProtoReflect.Descriptor instead.
+func (*GetOpHeadsResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *GetOpHeadsResponse) GetOpIds() [][]byte {
+	if x != nil {
+		return x.OpIds
+	}
+	return nil
+}
+
+type UpdateOpHeadsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The repo's name.
+	Repo string `protobuf:"bytes,1,opt,name=repo,proto3" json:"repo,omitempty"`
+	// The user who owns the workspace.
+	User string `protobuf:"bytes,2,opt,name=user,proto3" json:"user,omitempty"`
+	// The workspace's name.
+	Workspace string `protobuf:"bytes,3,opt,name=workspace,proto3" json:"workspace,omitempty"`
+	// The 20-byte IDs of the op heads to remove.
+	OldIds [][]byte `protobuf:"bytes,4,rep,name=old_ids,json=oldIds,proto3" json:"old_ids,omitempty"`
+	// The 20-byte ID of the op head to add.
+	NewId         []byte `protobuf:"bytes,5,opt,name=new_id,json=newId,proto3" json:"new_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateOpHeadsRequest) Reset() {
+	*x = UpdateOpHeadsRequest{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateOpHeadsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateOpHeadsRequest) ProtoMessage() {}
+
+func (x *UpdateOpHeadsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateOpHeadsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateOpHeadsRequest) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *UpdateOpHeadsRequest) GetRepo() string {
+	if x != nil {
+		return x.Repo
+	}
+	return ""
+}
+
+func (x *UpdateOpHeadsRequest) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *UpdateOpHeadsRequest) GetWorkspace() string {
+	if x != nil {
+		return x.Workspace
+	}
+	return ""
+}
+
+func (x *UpdateOpHeadsRequest) GetOldIds() [][]byte {
+	if x != nil {
+		return x.OldIds
+	}
+	return nil
+}
+
+func (x *UpdateOpHeadsRequest) GetNewId() []byte {
+	if x != nil {
+		return x.NewId
+	}
+	return nil
+}
+
+type UpdateOpHeadsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateOpHeadsResponse) Reset() {
+	*x = UpdateOpHeadsResponse{}
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateOpHeadsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateOpHeadsResponse) ProtoMessage() {}
+
+func (x *UpdateOpHeadsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jjc_sourceapi_v1_source_api_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateOpHeadsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateOpHeadsResponse) Descriptor() ([]byte, []int) {
+	return file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP(), []int{25}
+}
+
 var File_jjc_sourceapi_v1_source_api_proto protoreflect.FileDescriptor
 
 const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
@@ -880,7 +1483,38 @@ const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\x03msg\"\\\n" +
 	"\x14DownloadObjectHeader\x120\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x1c.jjc.sourceapi.v1.ObjectKindR\x04kind\x12\x12\n" +
-	"\x04size\x18\x02 \x01(\x04R\x04size*\x9e\x01\n" +
+	"\x04size\x18\x02 \x01(\x04R\x04size\"'\n" +
+	"\x11CreateRepoRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\"\x14\n" +
+	"\x12CreateRepoResponse\"T\n" +
+	"\x16CreateWorkspaceRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x19\n" +
+	"\x17CreateWorkspaceResponse\"?\n" +
+	"\x15ListWorkspacesRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\".\n" +
+	"\x16ListWorkspacesResponse\x12\x14\n" +
+	"\x05names\x18\x01 \x03(\tR\x05names\"T\n" +
+	"\x16DeleteWorkspaceRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x19\n" +
+	"\x17DeleteWorkspaceResponse\"Y\n" +
+	"\x11GetOpHeadsRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\x12\x1c\n" +
+	"\tworkspace\x18\x03 \x01(\tR\tworkspace\"+\n" +
+	"\x12GetOpHeadsResponse\x12\x15\n" +
+	"\x06op_ids\x18\x01 \x03(\fR\x05opIds\"\x8c\x01\n" +
+	"\x14UpdateOpHeadsRequest\x12\x12\n" +
+	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x12\n" +
+	"\x04user\x18\x02 \x01(\tR\x04user\x12\x1c\n" +
+	"\tworkspace\x18\x03 \x01(\tR\tworkspace\x12\x17\n" +
+	"\aold_ids\x18\x04 \x03(\fR\x06oldIds\x12\x15\n" +
+	"\x06new_id\x18\x05 \x01(\fR\x05newId\"\x17\n" +
+	"\x15UpdateOpHeadsResponse*\x9e\x01\n" +
 	"\n" +
 	"ObjectKind\x12\x1b\n" +
 	"\x17OBJECT_KIND_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -888,9 +1522,14 @@ const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\x10OBJECT_KIND_TREE\x10\x02\x12\x14\n" +
 	"\x10OBJECT_KIND_BLOB\x10\x03\x12\x19\n" +
 	"\x15OBJECT_KIND_OPERATION\x10\x04\x12\x14\n" +
-	"\x10OBJECT_KIND_VIEW\x10\x052\x06\n" +
-	"\x04Repo2\v\n" +
-	"\tWorkspace2\xe8\x03\n" +
+	"\x10OBJECT_KIND_VIEW\x10\x052_\n" +
+	"\x04Repo\x12W\n" +
+	"\n" +
+	"CreateRepo\x12#.jjc.sourceapi.v1.CreateRepoRequest\x1a$.jjc.sourceapi.v1.CreateRepoResponse2\xc0\x02\n" +
+	"\tWorkspace\x12f\n" +
+	"\x0fCreateWorkspace\x12(.jjc.sourceapi.v1.CreateWorkspaceRequest\x1a).jjc.sourceapi.v1.CreateWorkspaceResponse\x12c\n" +
+	"\x0eListWorkspaces\x12'.jjc.sourceapi.v1.ListWorkspacesRequest\x1a(.jjc.sourceapi.v1.ListWorkspacesResponse\x12f\n" +
+	"\x0fDeleteWorkspace\x12(.jjc.sourceapi.v1.DeleteWorkspaceRequest\x1a).jjc.sourceapi.v1.DeleteWorkspaceResponse2\xe8\x03\n" +
 	"\aObjects\x12W\n" +
 	"\n" +
 	"PutObjects\x12#.jjc.sourceapi.v1.PutObjectsRequest\x1a$.jjc.sourceapi.v1.PutObjectsResponse\x12_\n" +
@@ -898,8 +1537,11 @@ const file_jjc_sourceapi_v1_source_api_proto_rawDesc = "" +
 	"\x0eGetObjectsMeta\x12'.jjc.sourceapi.v1.GetObjectsMetaRequest\x1a(.jjc.sourceapi.v1.GetObjectsMetaResponse\x12W\n" +
 	"\n" +
 	"GetObjects\x12#.jjc.sourceapi.v1.GetObjectsRequest\x1a$.jjc.sourceapi.v1.GetObjectsResponse\x12e\n" +
-	"\x0eDownloadObject\x12'.jjc.sourceapi.v1.DownloadObjectRequest\x1a(.jjc.sourceapi.v1.DownloadObjectResponse0\x012\t\n" +
-	"\aOpHeads2\a\n" +
+	"\x0eDownloadObject\x12'.jjc.sourceapi.v1.DownloadObjectRequest\x1a(.jjc.sourceapi.v1.DownloadObjectResponse0\x012\xc4\x01\n" +
+	"\aOpHeads\x12W\n" +
+	"\n" +
+	"GetOpHeads\x12#.jjc.sourceapi.v1.GetOpHeadsRequest\x1a$.jjc.sourceapi.v1.GetOpHeadsResponse\x12`\n" +
+	"\rUpdateOpHeads\x12&.jjc.sourceapi.v1.UpdateOpHeadsRequest\x1a'.jjc.sourceapi.v1.UpdateOpHeadsResponse2\a\n" +
 	"\x05TrunkBHZFgithub.com/smukherj1/jj-workspaces/gen-go/jjc/sourceapi/v1;sourceapiv1b\x06proto3"
 
 var (
@@ -915,23 +1557,35 @@ func file_jjc_sourceapi_v1_source_api_proto_rawDescGZIP() []byte {
 }
 
 var file_jjc_sourceapi_v1_source_api_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_jjc_sourceapi_v1_source_api_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_jjc_sourceapi_v1_source_api_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_jjc_sourceapi_v1_source_api_proto_goTypes = []any{
-	(ObjectKind)(0),                // 0: jjc.sourceapi.v1.ObjectKind
-	(*Object)(nil),                 // 1: jjc.sourceapi.v1.Object
-	(*PutObjectsRequest)(nil),      // 2: jjc.sourceapi.v1.PutObjectsRequest
-	(*PutObjectsResponse)(nil),     // 3: jjc.sourceapi.v1.PutObjectsResponse
-	(*UploadObjectRequest)(nil),    // 4: jjc.sourceapi.v1.UploadObjectRequest
-	(*UploadObjectHeader)(nil),     // 5: jjc.sourceapi.v1.UploadObjectHeader
-	(*UploadObjectResponse)(nil),   // 6: jjc.sourceapi.v1.UploadObjectResponse
-	(*GetObjectsMetaRequest)(nil),  // 7: jjc.sourceapi.v1.GetObjectsMetaRequest
-	(*GetObjectsMetaResponse)(nil), // 8: jjc.sourceapi.v1.GetObjectsMetaResponse
-	(*ObjectMeta)(nil),             // 9: jjc.sourceapi.v1.ObjectMeta
-	(*GetObjectsRequest)(nil),      // 10: jjc.sourceapi.v1.GetObjectsRequest
-	(*GetObjectsResponse)(nil),     // 11: jjc.sourceapi.v1.GetObjectsResponse
-	(*DownloadObjectRequest)(nil),  // 12: jjc.sourceapi.v1.DownloadObjectRequest
-	(*DownloadObjectResponse)(nil), // 13: jjc.sourceapi.v1.DownloadObjectResponse
-	(*DownloadObjectHeader)(nil),   // 14: jjc.sourceapi.v1.DownloadObjectHeader
+	(ObjectKind)(0),                 // 0: jjc.sourceapi.v1.ObjectKind
+	(*Object)(nil),                  // 1: jjc.sourceapi.v1.Object
+	(*PutObjectsRequest)(nil),       // 2: jjc.sourceapi.v1.PutObjectsRequest
+	(*PutObjectsResponse)(nil),      // 3: jjc.sourceapi.v1.PutObjectsResponse
+	(*UploadObjectRequest)(nil),     // 4: jjc.sourceapi.v1.UploadObjectRequest
+	(*UploadObjectHeader)(nil),      // 5: jjc.sourceapi.v1.UploadObjectHeader
+	(*UploadObjectResponse)(nil),    // 6: jjc.sourceapi.v1.UploadObjectResponse
+	(*GetObjectsMetaRequest)(nil),   // 7: jjc.sourceapi.v1.GetObjectsMetaRequest
+	(*GetObjectsMetaResponse)(nil),  // 8: jjc.sourceapi.v1.GetObjectsMetaResponse
+	(*ObjectMeta)(nil),              // 9: jjc.sourceapi.v1.ObjectMeta
+	(*GetObjectsRequest)(nil),       // 10: jjc.sourceapi.v1.GetObjectsRequest
+	(*GetObjectsResponse)(nil),      // 11: jjc.sourceapi.v1.GetObjectsResponse
+	(*DownloadObjectRequest)(nil),   // 12: jjc.sourceapi.v1.DownloadObjectRequest
+	(*DownloadObjectResponse)(nil),  // 13: jjc.sourceapi.v1.DownloadObjectResponse
+	(*DownloadObjectHeader)(nil),    // 14: jjc.sourceapi.v1.DownloadObjectHeader
+	(*CreateRepoRequest)(nil),       // 15: jjc.sourceapi.v1.CreateRepoRequest
+	(*CreateRepoResponse)(nil),      // 16: jjc.sourceapi.v1.CreateRepoResponse
+	(*CreateWorkspaceRequest)(nil),  // 17: jjc.sourceapi.v1.CreateWorkspaceRequest
+	(*CreateWorkspaceResponse)(nil), // 18: jjc.sourceapi.v1.CreateWorkspaceResponse
+	(*ListWorkspacesRequest)(nil),   // 19: jjc.sourceapi.v1.ListWorkspacesRequest
+	(*ListWorkspacesResponse)(nil),  // 20: jjc.sourceapi.v1.ListWorkspacesResponse
+	(*DeleteWorkspaceRequest)(nil),  // 21: jjc.sourceapi.v1.DeleteWorkspaceRequest
+	(*DeleteWorkspaceResponse)(nil), // 22: jjc.sourceapi.v1.DeleteWorkspaceResponse
+	(*GetOpHeadsRequest)(nil),       // 23: jjc.sourceapi.v1.GetOpHeadsRequest
+	(*GetOpHeadsResponse)(nil),      // 24: jjc.sourceapi.v1.GetOpHeadsResponse
+	(*UpdateOpHeadsRequest)(nil),    // 25: jjc.sourceapi.v1.UpdateOpHeadsRequest
+	(*UpdateOpHeadsResponse)(nil),   // 26: jjc.sourceapi.v1.UpdateOpHeadsResponse
 }
 var file_jjc_sourceapi_v1_source_api_proto_depIdxs = []int32{
 	0,  // 0: jjc.sourceapi.v1.Object.kind:type_name -> jjc.sourceapi.v1.ObjectKind
@@ -942,18 +1596,30 @@ var file_jjc_sourceapi_v1_source_api_proto_depIdxs = []int32{
 	1,  // 5: jjc.sourceapi.v1.GetObjectsResponse.objects:type_name -> jjc.sourceapi.v1.Object
 	14, // 6: jjc.sourceapi.v1.DownloadObjectResponse.header:type_name -> jjc.sourceapi.v1.DownloadObjectHeader
 	0,  // 7: jjc.sourceapi.v1.DownloadObjectHeader.kind:type_name -> jjc.sourceapi.v1.ObjectKind
-	2,  // 8: jjc.sourceapi.v1.Objects.PutObjects:input_type -> jjc.sourceapi.v1.PutObjectsRequest
-	4,  // 9: jjc.sourceapi.v1.Objects.UploadObject:input_type -> jjc.sourceapi.v1.UploadObjectRequest
-	7,  // 10: jjc.sourceapi.v1.Objects.GetObjectsMeta:input_type -> jjc.sourceapi.v1.GetObjectsMetaRequest
-	10, // 11: jjc.sourceapi.v1.Objects.GetObjects:input_type -> jjc.sourceapi.v1.GetObjectsRequest
-	12, // 12: jjc.sourceapi.v1.Objects.DownloadObject:input_type -> jjc.sourceapi.v1.DownloadObjectRequest
-	3,  // 13: jjc.sourceapi.v1.Objects.PutObjects:output_type -> jjc.sourceapi.v1.PutObjectsResponse
-	6,  // 14: jjc.sourceapi.v1.Objects.UploadObject:output_type -> jjc.sourceapi.v1.UploadObjectResponse
-	8,  // 15: jjc.sourceapi.v1.Objects.GetObjectsMeta:output_type -> jjc.sourceapi.v1.GetObjectsMetaResponse
-	11, // 16: jjc.sourceapi.v1.Objects.GetObjects:output_type -> jjc.sourceapi.v1.GetObjectsResponse
-	13, // 17: jjc.sourceapi.v1.Objects.DownloadObject:output_type -> jjc.sourceapi.v1.DownloadObjectResponse
-	13, // [13:18] is the sub-list for method output_type
-	8,  // [8:13] is the sub-list for method input_type
+	15, // 8: jjc.sourceapi.v1.Repo.CreateRepo:input_type -> jjc.sourceapi.v1.CreateRepoRequest
+	17, // 9: jjc.sourceapi.v1.Workspace.CreateWorkspace:input_type -> jjc.sourceapi.v1.CreateWorkspaceRequest
+	19, // 10: jjc.sourceapi.v1.Workspace.ListWorkspaces:input_type -> jjc.sourceapi.v1.ListWorkspacesRequest
+	21, // 11: jjc.sourceapi.v1.Workspace.DeleteWorkspace:input_type -> jjc.sourceapi.v1.DeleteWorkspaceRequest
+	2,  // 12: jjc.sourceapi.v1.Objects.PutObjects:input_type -> jjc.sourceapi.v1.PutObjectsRequest
+	4,  // 13: jjc.sourceapi.v1.Objects.UploadObject:input_type -> jjc.sourceapi.v1.UploadObjectRequest
+	7,  // 14: jjc.sourceapi.v1.Objects.GetObjectsMeta:input_type -> jjc.sourceapi.v1.GetObjectsMetaRequest
+	10, // 15: jjc.sourceapi.v1.Objects.GetObjects:input_type -> jjc.sourceapi.v1.GetObjectsRequest
+	12, // 16: jjc.sourceapi.v1.Objects.DownloadObject:input_type -> jjc.sourceapi.v1.DownloadObjectRequest
+	23, // 17: jjc.sourceapi.v1.OpHeads.GetOpHeads:input_type -> jjc.sourceapi.v1.GetOpHeadsRequest
+	25, // 18: jjc.sourceapi.v1.OpHeads.UpdateOpHeads:input_type -> jjc.sourceapi.v1.UpdateOpHeadsRequest
+	16, // 19: jjc.sourceapi.v1.Repo.CreateRepo:output_type -> jjc.sourceapi.v1.CreateRepoResponse
+	18, // 20: jjc.sourceapi.v1.Workspace.CreateWorkspace:output_type -> jjc.sourceapi.v1.CreateWorkspaceResponse
+	20, // 21: jjc.sourceapi.v1.Workspace.ListWorkspaces:output_type -> jjc.sourceapi.v1.ListWorkspacesResponse
+	22, // 22: jjc.sourceapi.v1.Workspace.DeleteWorkspace:output_type -> jjc.sourceapi.v1.DeleteWorkspaceResponse
+	3,  // 23: jjc.sourceapi.v1.Objects.PutObjects:output_type -> jjc.sourceapi.v1.PutObjectsResponse
+	6,  // 24: jjc.sourceapi.v1.Objects.UploadObject:output_type -> jjc.sourceapi.v1.UploadObjectResponse
+	8,  // 25: jjc.sourceapi.v1.Objects.GetObjectsMeta:output_type -> jjc.sourceapi.v1.GetObjectsMetaResponse
+	11, // 26: jjc.sourceapi.v1.Objects.GetObjects:output_type -> jjc.sourceapi.v1.GetObjectsResponse
+	13, // 27: jjc.sourceapi.v1.Objects.DownloadObject:output_type -> jjc.sourceapi.v1.DownloadObjectResponse
+	24, // 28: jjc.sourceapi.v1.OpHeads.GetOpHeads:output_type -> jjc.sourceapi.v1.GetOpHeadsResponse
+	26, // 29: jjc.sourceapi.v1.OpHeads.UpdateOpHeads:output_type -> jjc.sourceapi.v1.UpdateOpHeadsResponse
+	19, // [19:30] is the sub-list for method output_type
+	8,  // [8:19] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -978,7 +1644,7 @@ func file_jjc_sourceapi_v1_source_api_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jjc_sourceapi_v1_source_api_proto_rawDesc), len(file_jjc_sourceapi_v1_source_api_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   5,
 		},
